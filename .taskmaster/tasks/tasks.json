@@ -220,56 +220,61 @@
         "dependencies": [
           "3"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Python interpreter check rejecting python3 stub",
             "description": "Verify the real python interpreter is present and reject the Microsoft Store python3 shim.",
             "details": "Satisfies REQ-019 for parent task 4. Resolve `python` and `python3` on PATH; if `python3` is the Store stub (recognized by zero-byte exit 49 with no output) fail with a clear message naming the resolved path. Confirm the real interpreter version is reported. Set PYTHONUTF8=1 in the verified script's env because the host locale is GBK and UTF-8 scripts otherwise crash.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Preflight test asserts the python3 Store stub is rejected with a clear message and the real python path is reported with version.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:54:46.213Z"
           },
           {
             "id": 2,
             "title": "task-master and claude path probes",
             "description": "Confirm the hyphenated task-master binary resolves and that headless claude returns under subscription.",
             "details": "Satisfies REQ-019 for parent task 4. Resolve `task-master` (hyphenated — the `taskmaster` lookup used by some helper scripts does not match on this host) and run a trivial subcommand to confirm it executes. Run a headless `claude -p --output-format json` round-trip and assert it returns in seconds under the Max subscription with no API key present. Both probes route through REQ-001.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Preflight test asserts resolved task-master path, a working `task-master --version` call, and a fast subscription-auth claude round-trip.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:54:46.225Z"
           },
           {
             "id": 3,
             "title": "Verified task-generation script extraction",
             "description": "Extract the verified direct-claude task-generation path into a callable script.",
             "details": "Satisfies REQ-019 for parent task 4. Capture the verified sequence (drive `claude` CLI directly to produce the task breakdown, never the task-master `claude-code` agent-SDK provider that blocked past 16 minutes on this platform) as a single callable script. The script must run end-to-end and produce a tasks.json validated by `task-master list`. Keep PYTHONUTF8=1 in its env.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2
             ],
             "testStrategy": "Run the script against a throwaway PRD and assert it produces a tasks.json that `task-master list` parses successfully.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:54:46.233Z"
           },
           {
             "id": 4,
             "title": "Structured pitfalls record for codex prompt injection",
             "description": "Emit the verified pitfalls in a structured form ready for REQ-014 prompt embedding.",
             "details": "Satisfies REQ-019 for parent task 4. Produce a small structured record naming each pitfall (python3 stub vs python with PYTHONUTF8=1, hyphenated task-master, direct claude CLI over agent-SDK provider) with the verified workaround so REQ-014's codex prompt can inline them. The supervisor must steer the worker to the verified path from the first turn rather than rediscovering pitfalls. Persist this record so it survives across runs. Include the codex-exec stdin-EOF pitfall (codex blocks reading stdin until EOF, so always pipe or close stdin) alongside the python3-stub / task-master-hyphen / claude-CLI pitfalls.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
             "testStrategy": "Unit test asserts the record contains all three pitfalls with both the failure mode and the verified workaround, in a shape REQ-014 can substitute into a prompt template.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:54:46.240Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T03:54:46.240Z"
       },
       {
         "id": "5",
@@ -1282,9 +1287,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T03:40:07.307Z",
+      "lastModified": "2026-05-30T03:54:46.241Z",
       "taskCount": 19,
-      "completedCount": 3,
+      "completedCount": 4,
       "tags": [
         "master"
       ]
