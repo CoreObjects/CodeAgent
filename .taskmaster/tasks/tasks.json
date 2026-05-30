@@ -1003,67 +1003,73 @@
           "10",
           "12"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Trunk-next to worker-turn wiring",
             "description": "Wire the trunk wrapper to fetch the on-deck task and feed it into the worker turn.",
             "details": "Satisfies REQ-008 for parent task 15. Call REQ-010's next + show to get the current goal; pass it into the REQ-008 prompt-assembly that REQ-006 will consume; launch the REQ-003 worker turn with the appropriate session id. The wiring exposes the loop's first integration seam. No deviation taxonomy lives here — just plumbing.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Integration test against a scratch tasks.json asserts the loop advances to the right on-deck task and a worker turn is launched with the goal in scope.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:09:45.217Z"
           },
           {
             "id": 2,
             "title": "Ground-truth + digest + codex composition",
             "description": "After the worker turn, compose ground truth, evidence digest, and codex call in sequence.",
             "details": "Satisfies REQ-008 for parent task 15. Sequence REQ-004 ground truth, REQ-005 digest assembly, and REQ-006 codex invocation per turn so the digest reaches codex bounded and structured. No interpretation of any field happens in this step — it is pure orchestration. Errors at any step short-circuit into REQ-018 backoff and ultimately REQ-011 escalation.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Integration test asserts the three steps run in order each turn and the codex prompt receives the digest produced by REQ-005.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:09:45.223Z"
           },
           {
             "id": 3,
             "title": "Memo persistence and verdict routing",
             "description": "Persist updated_memo and route the verdict via the REQ-007 switch.",
             "details": "Satisfies REQ-008 for parent task 15. After codex returns, write updated_memo via REQ-009 and call the REQ-007 router with the decision. The router returns a tagged action; the loop executes it (relay message_to_claude to the worker, advance to next task, etc.). Memo persistence happens regardless of verdict so escalations also carry forward.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
             "testStrategy": "Integration test asserts memo is persisted on every turn and the verdict drives the next loop iteration through the router's action.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:09:45.228Z"
           },
           {
             "id": 4,
             "title": "task_complete advance and abort halt",
             "description": "On task_complete advance the trunk via set-status and fetch the next task; on abort halt and record.",
             "details": "Satisfies REQ-008 for parent task 15. task_complete calls REQ-010 set-status=done and re-enters subtask 1 for the next task. abort exits the loop cleanly, records the verdict in the transcript via REQ-013, and surfaces a non-zero exit. The loop never auto-decides completion — codex does, and the loop only executes.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
             "testStrategy": "Integration test across three sequential tasks asserts task_complete advances the trunk and a synthetic abort halts the run with the recorded reason.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:09:45.232Z"
           },
           {
             "id": 5,
             "title": "Numeric safety branch hooks",
             "description": "Expose seams where REQ-016 non-progress guard and REQ-018 backoff plug in as numeric safety guards.",
             "details": "Satisfies REQ-008 for parent task 15. Add a tiny pre-turn hook that lets REQ-016 inspect change history and a post-failure hook that lets REQ-018 classify and back off. These are the only loop-side branches permitted beyond turn-completion detection and the verdict switch — no deviation taxonomy may live in the loop itself.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               4
             ],
             "testStrategy": "Contract test asserts only three branch families exist in the loop (turn-completion, verdict switch, numeric safety) and any new branch fails the contract.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:09:45.237Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T06:09:45.237Z"
       },
       {
         "id": "16",
@@ -1341,9 +1347,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T06:06:50.303Z",
+      "lastModified": "2026-05-30T06:09:45.237Z",
       "taskCount": 19,
-      "completedCount": 14,
+      "completedCount": 15,
       "tags": [
         "master"
       ]
