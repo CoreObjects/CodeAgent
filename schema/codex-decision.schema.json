@@ -3,7 +3,17 @@
   "title": "Codex supervisor decision",
   "type": "object",
   "additionalProperties": false,
-  "required": ["assessment", "verdict", "cited_evidence", "updated_memo"],
+  "required": [
+    "assessment",
+    "verdict",
+    "confidence",
+    "message_to_claude",
+    "escalation_question",
+    "escalation_category",
+    "cited_evidence",
+    "fake_done_flag",
+    "updated_memo"
+  ],
   "properties": {
     "assessment": {
       "type": "string",
@@ -13,44 +23,49 @@
       "type": "string",
       "enum": ["continue", "redirect", "task_complete", "escalate", "abort"]
     },
-    "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+    "confidence": {
+      "type": ["string", "null"],
+      "enum": ["low", "medium", "high", null]
+    },
     "message_to_claude": {
-      "type": "string",
-      "description": "Exact next instruction relayed verbatim to the worker. Required for continue/redirect."
+      "type": ["string", "null"],
+      "description": "Exact next instruction relayed verbatim to the worker. Required (non-null) for continue/redirect; null otherwise."
     },
     "escalation_question": {
-      "type": "string",
-      "description": "Required iff verdict==escalate: precise question + options/tradeoffs for the human."
+      "type": ["string", "null"],
+      "description": "Required (non-null) iff verdict==escalate; null otherwise."
     },
     "escalation_category": {
-      "type": "string",
-      "enum": ["irreversible", "money", "security_privacy_legal", "scope_product", "judgment_human_would_want", "none"]
+      "type": ["string", "null"],
+      "enum": ["irreversible", "money", "security_privacy_legal", "scope_product", "judgment_human_would_want", "none", null]
     },
     "cited_evidence": {
       "type": "array",
-      "minItems": 1,
-      "description": "Ground-truth facts justifying the verdict. Forces evidence, not vibes.",
+      "description": "Ground-truth facts justifying the verdict (>=1; enforced by the orchestrator).",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["source", "observation"],
+        "required": ["source", "observation", "supports"],
         "properties": {
           "source": {
             "type": "string",
             "enum": ["git_diff", "git_status", "test_exit_code", "test_output", "tool_use", "tool_result", "claude_claim", "task_requirement"]
           },
           "observation": { "type": "string" },
-          "supports": { "type": "string", "enum": ["verdict", "contradiction"] }
+          "supports": {
+            "type": ["string", "null"],
+            "enum": ["verdict", "contradiction", null]
+          }
         }
       }
     },
     "fake_done_flag": {
-      "type": "boolean",
+      "type": ["boolean", "null"],
       "description": "True if the worker implied completion but ground truth contradicts it."
     },
     "updated_memo": {
       "type": "string",
-      "description": "Codex's full rolling memo for next turn (bounded)."
+      "description": "Codex's full rolling memo for next turn (bounded; self-compacted)."
     }
   }
 }

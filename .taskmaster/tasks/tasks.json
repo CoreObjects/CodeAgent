@@ -721,60 +721,64 @@
         "dependencies": [
           "8"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Supervisor role and no-edit instruction",
             "description": "Draft the codex prompt opening defining the supervisor role and forbidding file edits.",
             "details": "Satisfies REQ-014 for parent task 11. State explicitly that codex is the supervisor (监工), never edits code, and acts only through verdicts in the decision schema. Reinforce that the read-only sandbox at the process level (REQ-006) is the safety net but the design intent is that codex chooses not to need it. Keep the opening short to preserve context budget.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Review checklist confirms the opening states role, no-file-edit constraint, and verdict-only action; a smoke run shows codex declines a prompt asking it to edit a file.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:47:21.262Z"
           },
           {
             "id": 2,
             "title": "Escalation whitelist enumeration",
             "description": "Enumerate the escalation categories so codex itself decides membership.",
             "details": "Satisfies REQ-014 for parent task 11. List the five categories: irreversible/destructive operations, spending real money, security/privacy/legal trade-offs, scope/product decisions not settled by the PRD, and judgment-the-human-would-want. Instruct codex to set escalation_category accordingly and to leave it `none` otherwise. The orchestrator never inspects this; codex owns the judgment.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Review checklist confirms all five categories present; smoke probe with a destructive-action prompt asserts codex returns escalate with the correct category.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:47:21.269Z"
           },
           {
             "id": 3,
             "title": "Memo self-compaction guidance",
             "description": "Instruct codex to keep updated_memo under the configured size cap by self-compaction.",
             "details": "Satisfies REQ-014 for parent task 11. Tell codex the memo cap (default 6000 characters), that the store warns but does not truncate (REQ-009), and that compaction is its responsibility — to summarize older memo content rather than letting it grow. Pair with a hint about which memo content tends to stay load-bearing across turns.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Review checklist confirms the cap and self-compaction instruction; a turn-series probe asserts the memo stays under cap across multiple turns.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:47:21.274Z"
           },
           {
             "id": 4,
             "title": "Verified pitfalls inline from REQ-019",
             "description": "Embed the verified host pitfalls so codex steers the worker to the verified path from turn one.",
             "details": "Satisfies REQ-014 for parent task 11. Substitute the structured pitfalls record produced by task 4's subtask 4 into the prompt: python vs python3 stub with PYTHONUTF8=1, hyphenated task-master, direct claude CLI over the blocking task-master claude-code agent-SDK provider. Without this codex would re-discover the pitfalls each run and waste turns on dead paths. Keep the inlined text short.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Review checklist confirms all three pitfalls inlined with their workarounds; a smoke probe shows codex's first-turn message_to_claude prefers the verified path.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:47:21.278Z"
           },
           {
             "id": 5,
             "title": "End-to-end prompt probe",
             "description": "Run codex against the assembled prompt and confirm a schema-valid decision is emitted.",
             "details": "Satisfies REQ-014 for parent task 11. Compose subtasks 1–4 into the final system prompt and invoke codex (via REQ-006) on a representative bounded prompt. Assert the decision validates against the schema with at least one cited evidence item. This is the prompt's acceptance gate.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2,
@@ -782,9 +786,11 @@
               4
             ],
             "testStrategy": "Integration probe asserts the decision validates against the schema and the escalation category and memo behave per subtasks 2 and 3.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:47:21.283Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T04:47:21.283Z"
       },
       {
         "id": "12",
@@ -1320,9 +1326,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T04:40:53.082Z",
+      "lastModified": "2026-05-30T04:47:21.283Z",
       "taskCount": 19,
-      "completedCount": 10,
+      "completedCount": 11,
       "tags": [
         "master"
       ]
