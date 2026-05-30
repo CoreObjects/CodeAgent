@@ -287,60 +287,64 @@
           "1",
           "2"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Argument builder for stream-json + resume + permission",
             "description": "Construct the claude argv for one-turn headless mode with stream-json output and resume support.",
             "details": "Satisfies REQ-003 for parent task 5. Always include `--output-format stream-json --verbose`; never include `--bare`. On the first turn omit `--resume`; on subsequent turns pass `--resume <session_id>` captured from the init event. Configure permission mode and allow-list so the worker runs without interactive prompts, per the open question Q2 resolution (Phase 4 will fix the posture).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test asserts the argv contains stream-json/verbose, never --bare, and includes --resume only when a session id is supplied.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:27:34.556Z"
           },
           {
             "id": 2,
             "title": "Session id capture from init event",
             "description": "Parse the stream-json init event to capture the session id for subsequent --resume turns.",
             "details": "Satisfies REQ-003 for parent task 5. Wire the REQ-002 parser to inspect the first emitted JSON object on the stream; extract the session id from the init event and stash it so the next turn can resume. Treat a missing init event as a hard error since later turns depend on the id. The id is opaque to the orchestrator beyond resume passthrough.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Replay a recorded stream-json transcript and assert the session id is captured and surfaces unchanged to the resume argv on the next turn.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:27:34.564Z"
           },
           {
             "id": 3,
             "title": "Turn normalization (claims, tool-uses, tool-results, result event)",
             "description": "Normalize the stream into a single turn object containing worker text, tool-uses with error flags, and the terminal result event.",
             "details": "Satisfies REQ-003 for parent task 5. Consume the parsed stream-json events and produce { sessionId, finalText, toolUseCalls, toolResults (with isError per call), resultEvent } so REQ-005 can build its claims block deterministically. Preserve event ordering inside arrays. Do not interpret the contents — that is codex's job.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
             "testStrategy": "Unit tests against recorded transcripts assert tool-use enumeration matches the stream order and each tool result's error flag is preserved.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:27:34.569Z"
           },
           {
             "id": 4,
             "title": "Termination on result/exit/timeout",
             "description": "Wait for the stream result event, process exit, or timeout before returning the normalized turn.",
             "details": "Satisfies REQ-003 for parent task 5. The runner returns only when one of three signals fires: the stream-json `result` event arrives, the process exits, or the REQ-001 timeout terminates the tree. Return the partially-normalized turn plus a termination reason. Never return on a stop_reason inside an assistant event; the result event is the canonical turn boundary.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
             "testStrategy": "Tests fire each termination path and assert the runner resolves once and only once, carrying the correct reason.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:27:34.574Z"
           },
           {
             "id": 5,
             "title": "One-turn runner integration test",
             "description": "Wire subtasks 1–4 into a callable runOneTurn(prompt, sessionId?) and exercise against recorded streams.",
             "details": "Satisfies REQ-003 for parent task 5. Compose the argument builder, REQ-001 spawn, REQ-002 parser, session-id capture, normalization, and termination into a single entry point. Provide first-turn and resumed-turn smoke tests using a recorded transcript fixture. This is the worker-side primitive consumed by the loop in task 15.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2,
@@ -348,9 +352,11 @@
               4
             ],
             "testStrategy": "Replay first-turn and resumed-turn fixtures and assert the normalized turn matches the golden shape; gate task 5 on both passing.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:27:34.580Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T04:27:34.580Z"
       },
       {
         "id": "6",
@@ -1287,9 +1293,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T03:54:46.241Z",
+      "lastModified": "2026-05-30T04:27:34.580Z",
       "taskCount": 19,
-      "completedCount": 4,
+      "completedCount": 5,
       "tags": [
         "master"
       ]
