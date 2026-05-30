@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { slugFromPrd, parseSupervArgs } from '../src/cli.js';
+import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
+import { slugFromPrd, parseSupervArgs, scaffoldRepo } from '../src/cli.js';
 
 // Pure CLI helpers. The IO-heavy runSuperv (scaffold + decompose + run) is
 // covered by the live smoke (`superv docs/test-prd.md --limit 3`), not unit tests.
@@ -42,4 +45,27 @@ test('parseSupervArgs: a second positional is the target dir', () => {
   const o = parseSupervArgs(['./prd.md', './target']);
   assert.equal(o.prd, './prd.md');
   assert.equal(o.out, './target');
+});
+
+test('scaffoldRepo lays down the PRD + scaffold + worker settings, creating .taskmaster/docs (regression)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scaffold-'));
+  try {
+    const prd = path.join(dir, 'prd.md');
+    fs.writeFileSync(prd, '# X\n');
+    const target = path.join(dir, 'out');
+    const gitCalls = [];
+    const runProcess = async (bin, args) => {
+      if (bin === 'git') gitCalls.push(args[0]);
+      return { code: 0, stdout: '', stderr: '', timedOut: false, error: null };
+    };
+    await scaffoldRepo({ outDir: target, prdPath: prd, runProcess });
+
+    // the bug was copying the PRD into a .taskmaster/docs that was never created.
+    assert.ok(fs.existsSync(path.join(target, '.taskmaster', 'docs', 'prd.md')));
+    assert.ok(fs.existsSync(path.join(target, '.taskmaster', 'config.json')));
+    assert.ok(fs.existsSync(path.join(target, '.claude', 'settings.json')));
+    assert.ok(gitCalls.includes('init') && gitCalls.includes('commit'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

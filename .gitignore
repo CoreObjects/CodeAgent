@@ -27,3 +27,6 @@ runs/
 
 # Live milestone scratch repo (scaffolded by scripts/milestone.mjs)
 .milestone-scratch/
+
+# superv-generated app repos when run from inside this repo (e.g. the sample PRD)
+/casiocalc/

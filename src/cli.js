@@ -87,6 +87,19 @@ async function gitInitWithBaseline(dir, runProcess) {
   await g(['commit', '-q', '-m', 'superv: scaffold repo + PRD']);
 }
 
+/**
+ * Lay down a fresh target repo: task-master scaffold, the PRD, the worker
+ * permission boundary, and a git baseline commit. Exported for regression tests.
+ */
+export async function scaffoldRepo({ outDir, prdPath, runProcess = defaultRunProcess }) {
+  writeScaffold(outDir);
+  const docsDir = path.join(outDir, '.taskmaster', 'docs');
+  fs.mkdirSync(docsDir, { recursive: true }); // copyFileSync does NOT create the dir
+  fs.copyFileSync(prdPath, path.join(docsDir, 'prd.md'));
+  ensureWorkerSettings(outDir, { overwrite: true });
+  await gitInitWithBaseline(outDir, runProcess);
+}
+
 function consoleAskHuman(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
@@ -130,10 +143,7 @@ export async function runSuperv({
 
   let total = 0;
   if (opts.decompose) {
-    writeScaffold(outDir);
-    fs.copyFileSync(prdPath, path.join(outDir, '.taskmaster', 'docs', 'prd.md'));
-    ensureWorkerSettings(outDir, { overwrite: true });
-    await gitInitWithBaseline(outDir, runProcess);
+    await scaffoldRepo({ outDir, prdPath, runProcess });
 
     const bins = await resolveAllBinaries(validateConfig({}), runProcess);
     console.error(`[superv] decomposing ${path.basename(prdPath)} → tasks (this calls claude once)…`);
