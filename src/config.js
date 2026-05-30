@@ -17,8 +17,12 @@ export const DEFAULT_CONFIG = {
   digestMaxChars: 6000,
   testCommand: null,
   logDir: 'runs',
-  permissionMode: 'acceptEdits',
-  allowedTools: ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob', 'TodoWrite'],
+  // The worker runs in `auto` mode (auto-approve with background safety checks);
+  // deny rules still apply. allowedTools is empty so the per-repo
+  // .claude/settings.json (provisioned by worker-permissions.js) drives allow/deny
+  // instead of being overridden by the CLI --allowedTools flag.
+  permissionMode: 'auto',
+  allowedTools: [],
 };
 
 const API_KEY_NAMED = new Set(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY']);

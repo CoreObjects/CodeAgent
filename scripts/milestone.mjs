@@ -21,6 +21,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { runMain } from '../src/main.js';
 import { runProcess } from '../src/proc.js';
+import { ensureWorkerSettings } from '../src/worker-permissions.js';
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), '..', '..');
 const SCRATCH = path.join(ROOT, '.milestone-scratch');
@@ -112,6 +113,9 @@ async function scaffold() {
       2,
     ),
   );
+
+  // The worker's per-repo permission boundary (auto mode + hardened deny).
+  ensureWorkerSettings(SCRATCH, { overwrite: true });
 
   await git(['init', '-q']);
   await git(['add', '-A']);

@@ -30,6 +30,7 @@ import { createRunLogger, redactSecrets } from './logging.js';
 import { createEscalationChannel } from './escalation.js';
 import { createProgressGuard } from './progress-guard.js';
 import { runWithResilience, classifyFailure } from './resilience.js';
+import { ensureWorkerSettings } from './worker-permissions.js';
 import { route } from './router.js';
 import { runLoop } from './loop.js';
 
@@ -270,6 +271,18 @@ export async function runMain({
       'Startup probe failed — subscription auth is not available for ' +
         `${!probe.claude.ok ? 'claude ' : ''}${!probe.codex.ok ? 'codex' : ''}`.trim() +
         '. Refusing to run; this orchestrator never injects an API key.',
+    );
+  }
+
+  // Provision the worker's per-repo permission boundary (allow/deny) if the
+  // target repo has none. We never clobber an existing .claude/settings.json —
+  // if one exists, the repo owns its rules; warn so a weak deny isn't silent.
+  const settings = ensureWorkerSettings(cwd);
+  if (settings.wrote) {
+    console.error(`[orchestrator] wrote worker permissions to ${settings.path}`);
+  } else {
+    console.error(
+      `[orchestrator] kept existing ${settings.path} — ensure it denies destructive commands (rm/find/force-push/reset --hard).`,
     );
   }
 
