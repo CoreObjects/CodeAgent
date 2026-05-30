@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decomposePrd } from '../src/decompose.js';
+import { decomposePrd, extractTasksArrayText } from '../src/decompose.js';
 
 // Reusable PRD->tasks decomposition: drive `claude -p` directly (the verified
 // path; NOT task-master's claude-code provider, which hangs on Windows) and wrap
@@ -8,6 +8,8 @@ import { decomposePrd } from '../src/decompose.js';
 // runProcess is injected so the unit test never spawns a real CLI.
 
 const claudeEnvelope = (arr) => ({ code: 0, stdout: JSON.stringify({ result: JSON.stringify(arr) }), stderr: '', error: null });
+const claudeRaw = (text) => ({ code: 0, stdout: JSON.stringify({ result: text }), stderr: '', error: null });
+const task = (id) => ({ id, title: `T${id}`, description: '', details: '', testStrategy: '', priority: 'low', dependencies: [], status: 'pending', subtasks: [] });
 
 test('drives claude on the PRD and returns a tagged tasks.json', async () => {
   const calls = [];
@@ -47,9 +49,48 @@ test('passes a timeout through to runProcess', async () => {
   let seen = null;
   const runProcess = async (_bin, _args, opts) => {
     seen = opts;
-    return claudeEnvelope([{ id: 1, title: 'A', description: '', details: '', testStrategy: '', priority: 'low', dependencies: [], status: 'pending', subtasks: [] }]);
+    return claudeEnvelope([task(1)]);
   };
   await decomposePrd({ prdPath: 'p', claudeBin: 'C', env: { A: '1' }, timeoutMs: 12345, runProcess });
   assert.equal(seen.timeoutMs, 12345);
   assert.deepEqual(seen.env, { A: '1' });
+});
+
+test('extractTasksArrayText strips prose and code fences, keeping the array', () => {
+  assert.equal(extractTasksArrayText('Sure! Here:\n```json\n[{"id":1}]\n```\nDone.'), '[{"id":1}]');
+  assert.equal(extractTasksArrayText('[{"id":1}]'), '[{"id":1}]');
+  assert.equal(extractTasksArrayText('garbage [ {"id":1} ] trailing'), '[ {"id":1} ]');
+});
+
+test('tolerates prose/fences around the array claude returns', async () => {
+  const runProcess = async () => claudeRaw('Sure, here you go:\n```json\n' + JSON.stringify([task(1), task(2)]) + '\n```');
+  const out = await decomposePrd({ prdPath: 'p', claudeBin: 'C', env: {}, runProcess });
+  assert.equal(out.master.tasks.length, 2);
+});
+
+test('retries once with a strict prompt when the first output is malformed, then succeeds', async () => {
+  let n = 0;
+  const prompts = [];
+  const runProcess = async (_bin, args) => {
+    n += 1;
+    prompts.push(args[args.indexOf('-p') + 1]);
+    return n === 1 ? claudeRaw('[{"id":1, "title": }]') : claudeEnvelope([task(1)]);
+  };
+  const out = await decomposePrd({ prdPath: 'p', claudeBin: 'C', env: {}, runProcess });
+  assert.equal(n, 2); // one retry
+  assert.equal(out.master.tasks.length, 1);
+  assert.match(prompts[1], /single line|minified|escape/i); // the retry is stricter
+});
+
+test('throws with the raw output attached after a malformed retry (for diagnosis)', async () => {
+  const runProcess = async () => claudeRaw('[{"id":1, "title": }]');
+  let caught = null;
+  await assert.rejects(
+    decomposePrd({ prdPath: 'p', claudeBin: 'C', env: {}, runProcess }).catch((e) => {
+      caught = e;
+      throw e;
+    }),
+    /malformed/i,
+  );
+  assert.ok(caught.rawOutput.includes('"title"')); // claude's raw output is preserved
 });

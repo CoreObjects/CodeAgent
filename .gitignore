@@ -30,3 +30,6 @@ runs/
 
 # superv-generated app repos when run from inside this repo (e.g. the sample PRD)
 /casiocalc/
+
+# superv decompose diagnostics (written on a parse failure)
+superv-decompose-raw.txt

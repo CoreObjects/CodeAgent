@@ -146,14 +146,31 @@ export async function runSuperv({
     await scaffoldRepo({ outDir, prdPath, runProcess });
 
     const bins = await resolveAllBinaries(validateConfig({}), runProcess);
-    console.error(`[superv] decomposing ${path.basename(prdPath)} → tasks (this calls claude once)…`);
-    const tasksJson = await decomposePrd({
-      prdPath: path.join(outDir, '.taskmaster', 'docs', 'prd.md'),
-      claudeBin: bins.claude,
-      env: sanitizeEnv(env),
-      num: opts.num,
-      runProcess,
-    });
+    console.error(`[superv] decomposing ${path.basename(prdPath)} → tasks (this calls claude)…`);
+    let tasksJson;
+    try {
+      tasksJson = await decomposePrd({
+        prdPath: path.join(outDir, '.taskmaster', 'docs', 'prd.md'),
+        claudeBin: bins.claude,
+        env: sanitizeEnv(env),
+        num: opts.num,
+        runProcess,
+      });
+    } catch (err) {
+      // Persist claude's raw output for diagnosis, and clean up the freshly
+      // scaffolded dir so the next run isn't blocked by the non-empty guard.
+      if (err.rawOutput) {
+        const dbg = path.join(cwd, 'superv-decompose-raw.txt');
+        try {
+          fs.writeFileSync(dbg, err.rawOutput, 'utf8');
+          err.message += `\n[superv] saved claude's raw output to ${dbg}`;
+        } catch {
+          /* best effort */
+        }
+      }
+      if (fresh) fs.rmSync(outDir, { recursive: true, force: true });
+      throw err;
+    }
     if (opts.limit > 0) tasksJson.master.tasks = tasksJson.master.tasks.slice(0, opts.limit);
     const tp = path.join(outDir, '.taskmaster', 'tasks', 'tasks.json');
     fs.mkdirSync(path.dirname(tp), { recursive: true });
