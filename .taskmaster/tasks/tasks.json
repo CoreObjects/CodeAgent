@@ -592,55 +592,60 @@
         "dependencies": [
           "8"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Pure switch over verdict enum",
             "description": "Implement a pure function mapping each verdict enum value to exactly one tagged action.",
             "details": "Satisfies REQ-007 for parent task 9. Switch on verdict ∈ {continue, redirect, task_complete, escalate, abort} and return a tagged action — { kind, payload } — without reading any other decision field beyond the next-message/question fields it forwards. The router is pure: same input, same output, no side effects. All judgment lives in codex; the router only relays.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test feeds each enum value and asserts the exact tagged action returned.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:40:53.041Z"
           },
           {
             "id": 2,
             "title": "Field forwarding for message_to_claude and escalation_question",
             "description": "Forward only the fields needed by each branch and leave everything else untouched.",
             "details": "Satisfies REQ-007 for parent task 9. continue and redirect forward message_to_claude byte-for-byte; escalate forwards escalation_question; task_complete and abort forward no message. Never rewrite or paraphrase the forwarded strings. This preserves the design that codex's voice reaches the worker (or the human) unmodified.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit tests assert each branch carries the right field unchanged and omits the others.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:40:53.050Z"
           },
           {
             "id": 3,
             "title": "Exhaustive enum coverage tests",
             "description": "Lock in coverage of every enum value with a test per branch.",
             "details": "Satisfies REQ-007 for parent task 9. One test per enum value asserts the correct tagged action; a default-case test asserts an unknown verdict throws rather than silently falling through (since REQ-006 already rejects out-of-schema verdicts). This is the regression net the loop depends on.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
             "testStrategy": "Run the suite; gate task 9 on all five enum values plus the default-case throw.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:40:53.055Z"
           },
           {
             "id": 4,
             "title": "Contract test: no read of assessment or cited_evidence",
             "description": "Prove the router never reads assessment text, cited_evidence, fake_done_flag, or ground truth.",
             "details": "Satisfies REQ-007 for parent task 9. Pass the router a decision whose assessment, cited_evidence, and fake_done_flag are Proxy objects that throw on access; assert the router still returns the correct action. This enforces the design constraint that all judgment lives in codex — the orchestrator literally cannot read the assessment without crashing.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Run the proxy-decision test for each verdict and assert no Proxy access trap fires.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:40:53.060Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T04:40:53.060Z"
       },
       {
         "id": "10",
@@ -650,56 +655,61 @@
         "testStrategy": "Unit tests verify byte-for-byte round-trip of updated_memo, correct delimiter framing in the next prompt, and that overcap memos log a warning without truncation.",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Byte-for-byte memo writer",
             "description": "Persist the codex updated_memo verbatim to disk after each turn.",
             "details": "Satisfies REQ-009 for parent task 10. Write the updated_memo string exactly as codex returned it, without trimming, normalizing whitespace, or re-encoding. Use a fixed file path per run so the next turn knows where to read. The store performs no interpretation — it is a dumb sink.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test writes a memo containing trailing whitespace and unicode and asserts the file bytes match exactly.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:40:53.066Z"
           },
           {
             "id": 2,
             "title": "Verbatim replay under fixed delimiter",
             "description": "Replay the memo into the next codex prompt under the agreed delimiter unchanged.",
             "details": "Satisfies REQ-009 for parent task 10. On the next turn, read the persisted memo and insert it into REQ-008's prompt-assembly step under a fixed delimiter (e.g., `--- MEMO ---` … `--- /MEMO ---`) so codex sees the same framing each turn. Never modify the memo body during replay.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test asserts the replayed prompt contains the delimiter framing and the memo body matches the persisted bytes.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:40:53.071Z"
           },
           {
             "id": 3,
             "title": "Size cap with warning log (no truncation)",
             "description": "On overflow log a warning and pass the memo through; never silently truncate.",
             "details": "Satisfies REQ-009 for parent task 10. If the memo exceeds the configured cap (default 6000 characters) emit a log warning via REQ-013's sink and pass the full memo through. Compaction is codex's responsibility per REQ-014 self-compaction guidance; the store must not paper over that obligation by chopping bytes.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test writes an overcap memo and asserts a warning is logged exactly once and the memo round-trips at full length.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:40:53.076Z"
           },
           {
             "id": 4,
             "title": "Round-trip and overflow regression tests",
             "description": "Author the regression suite covering write, replay, and overflow behaviors.",
             "details": "Satisfies REQ-009 for parent task 10. Cases: byte-for-byte round-trip including unicode and whitespace, delimiter framing on replay, and overcap warning with full passthrough. This suite locks in the design that compaction lives in codex, not the orchestrator.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2,
               3
             ],
             "testStrategy": "Run the suite; gate task 10 on all three behaviors verified.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:40:53.082Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T04:40:53.082Z"
       },
       {
         "id": "11",
@@ -1310,9 +1320,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T04:39:01.927Z",
+      "lastModified": "2026-05-30T04:40:53.082Z",
       "taskCount": 19,
-      "completedCount": 8,
+      "completedCount": 10,
       "tags": [
         "master"
       ]
