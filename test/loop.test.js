@@ -120,3 +120,43 @@ test('numeric turn cap escalates to the human', async () => {
   assert.equal(r.reason, 'abort');
   assert.ok(calls.worker.length <= 3);
 });
+
+// REQ-016 — the loop feeds each turn's ground truth to the non-progress guard and
+// turns its escalate signal into a human pause routed back to codex (never the worker).
+
+test('feeds each turn ground truth to observeProgress', async () => {
+  const { deps, calls } = makeDeps([
+    { verdict: 'continue', message_to_claude: 'x', updated_memo: 'm' },
+    { verdict: 'task_complete', updated_memo: 'm' },
+  ]);
+  const observed = [];
+  deps.observeProgress = (gt) => observed.push(gt);
+  await runLoop(deps);
+  assert.equal(observed.length, 2);
+  assert.deepEqual(observed[0], { changedFiles: [] }); // exactly what collect() returned
+});
+
+test('pre-turn guard escalation routes the human answer back to codex via the memo, not the worker', async () => {
+  const { deps, calls } = makeDeps([{ verdict: 'task_complete', updated_memo: 'm' }]);
+  let fired = false;
+  deps.preTurnGuard = () => (fired ? null : ((fired = true), { escalate: true, question: 'Stalled — continue?' }));
+  deps.askHuman = async (q) => {
+    calls.askHuman.push(q);
+    return 'try a different approach';
+  };
+  await runLoop(deps);
+  assert.deepEqual(calls.askHuman, ['Stalled — continue?']);
+  // answer went into the memo (codex's channel)...
+  assert.ok(calls.memoWrites.some((m) => m.includes('try a different approach')));
+  // ...and NOT into the worker's instruction stream.
+  assert.ok(!calls.worker.some((w) => w.includes('try a different approach')));
+});
+
+test('pre-turn guard escalation honoring an explicit abort stops the loop before running the worker', async () => {
+  const { deps, calls } = makeDeps([{ verdict: 'task_complete', updated_memo: 'm' }]);
+  deps.preTurnGuard = () => ({ escalate: true, question: 'Stalled hard — continue or abort?' });
+  deps.askHuman = async () => 'abort please';
+  const r = await runLoop(deps);
+  assert.equal(r.reason, 'abort');
+  assert.equal(calls.worker.length, 0); // aborted at the guard, before the worker ran
+});

@@ -28,6 +28,7 @@ export async function runLoop(deps) {
     logTurn = () => {},
     askHuman,
     preTurnGuard = () => null,
+    observeProgress = () => {},
     maxTurnsPerTask = 50,
   } = deps;
 
@@ -47,9 +48,17 @@ export async function runLoop(deps) {
       turnIndex += 1;
       taskTurns += 1;
 
-      // 15.5 numeric pre-turn guard (REQ-016 hook) — surfaces to the human, never judges.
+      // 15.5 numeric pre-turn guard (REQ-016) — a stall surfaces to the human; it never judges.
       const guard = preTurnGuard({ task, taskTurns });
-      if (guard?.escalate) await askHuman(guard.question);
+      if (guard?.escalate) {
+        const answer = await askHuman(guard.question);
+        // route the human's answer back to CODEX (not the worker) via the memo.
+        memo.write(`${memo.read()}\n\n[HUMAN ANSWER to non-progress escalation] ${answer}`);
+        if (/\babort\b/i.test(answer)) {
+          aborted = true; // human's explicit kill switch — not an auto-abort
+          break;
+        }
+      }
 
       // 15.1 first turn of a task uses the goal; later turns relay codex's message verbatim.
       const instruction = pendingInstruction ?? renderGoal(task);
@@ -59,6 +68,7 @@ export async function runLoop(deps) {
 
       // 15.2 ground truth -> bounded digest -> codex (no interpretation here).
       const groundTruth = await collect(snapshot);
+      observeProgress(groundTruth); // REQ-016 — feed the mechanical stall counter
       const { json: evidenceJson, digest } = buildDigest({ turn, groundTruth, task, turnIndex });
       const instructions = assemblePrompt({ goal: renderGoal(task), memo: memo.read() });
       const { decision } = await decide({ instructions, evidenceJson });
