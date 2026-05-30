@@ -368,56 +368,61 @@
         "dependencies": [
           "1"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Pre-turn HEAD and porcelain snapshot",
             "description": "Snapshot HEAD commit and porcelain status before the worker turn begins.",
             "details": "Satisfies REQ-004 for parent task 6. Run `git rev-parse HEAD` and `git status --porcelain` through the REQ-001 wrapper before the worker is launched; record both values keyed by turn index so the post-turn computation can diff against them. Do not interpret state — the collector only observes. Operate from the project working tree.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Integration test in a scratch repo asserts the snapshot captures the current HEAD and porcelain output verbatim.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:29:59.817Z"
           },
           {
             "id": 2,
             "title": "Post-turn diff stats and changed-file list",
             "description": "After the turn, compute diff stats and changed-file list scoped to the pre-turn HEAD.",
             "details": "Satisfies REQ-004 for parent task 6. Run `git diff --shortstat <pre-turn-HEAD>` and `git diff --name-only <pre-turn-HEAD>` so the changed-file list is bounded to this turn rather than the whole working tree. Capture insertions/deletions/files-changed counts. The pre-turn HEAD comes from subtask 1.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Integration test edits a file during a simulated turn and asserts the diff stats and changed-file list match exactly.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:29:59.824Z"
           },
           {
             "id": 3,
             "title": "Post-turn porcelain status",
             "description": "Capture post-turn porcelain status independently of the worker's claims.",
             "details": "Satisfies REQ-004 for parent task 6. Run `git status --porcelain` after the turn and record the output verbatim so the digest can show divergence between the worker's claim of clean state and any leftover untracked/modified files. Operates as a sibling observation to the diff in subtask 2.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Integration test leaves an untracked file in a simulated turn and asserts the porcelain output includes it.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:29:59.829Z"
           },
           {
             "id": 4,
             "title": "Optional test runner with exit code and tail",
             "description": "When a test command is configured, run it and capture exit code plus an output tail.",
             "details": "Satisfies REQ-004 for parent task 6. If config.testCommand is set, run it through the REQ-001 wrapper after the diff is captured; record the exit code faithfully (including non-zero) and the tail of stdout/stderr. When unset, omit the field entirely rather than emitting a fake passing result. The collector performs no test-result interpretation.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2,
               3
             ],
             "testStrategy": "Tests configure a failing test command and assert the non-zero exit code and tail are preserved; an unconfigured run omits the field.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:29:59.833Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T04:29:59.833Z"
       },
       {
         "id": "7",
@@ -1293,9 +1298,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T04:27:34.580Z",
+      "lastModified": "2026-05-30T04:29:59.833Z",
       "taskCount": 19,
-      "completedCount": 5,
+      "completedCount": 6,
       "tags": [
         "master"
       ]
