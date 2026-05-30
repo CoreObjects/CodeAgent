@@ -73,10 +73,10 @@ function killTree(pid) {
  *
  * @param {string} bin
  * @param {string[]} args
- * @param {{cwd?:string, env?:object, timeoutMs?:number, input?:string}} [opts]
+ * @param {{cwd?:string, env?:object, timeoutMs?:number, input?:string, onStdout?:(chunk:string)=>void}} [opts]
  */
 export function runProcess(bin, args = [], opts = {}) {
-  const { cwd, env, timeoutMs, input } = opts;
+  const { cwd, env, timeoutMs, input, onStdout } = opts;
   const { command, args: spawnArgs } = buildSpawnArgs(bin, args);
 
   return new Promise((resolve) => {
@@ -118,7 +118,15 @@ export function runProcess(bin, args = [], opts = {}) {
     }
 
     child.stdout?.on('data', (d) => {
-      stdout += d.toString();
+      const s = d.toString();
+      stdout += s;
+      if (onStdout) {
+        try {
+          onStdout(s);
+        } catch {
+          /* a misbehaving stream consumer must never break the spawn */
+        }
+      }
     });
     child.stderr?.on('data', (d) => {
       stderr += d.toString();

@@ -79,14 +79,37 @@ export async function runClaudeTurn({
   allowedTools = [],
   env,
   timeoutMs,
+  onEvent,
 }) {
   const args = buildClaudeTurnArgs(instruction, { sessionId, permissionMode, allowedTools });
-  const res = await runProcess(claudeBin, args, { env, timeoutMs, input: '' });
 
+  // Parse stream-json incrementally as stdout arrives, so onEvent fires LIVE.
   const parser = new NdjsonParser();
-  const events = [...parser.push(res.stdout ?? ''), ...parser.flush()]
-    .filter((e) => e.type === 'json')
-    .map((e) => e.value);
+  const events = [];
+  const consume = (results) => {
+    for (const r of results) {
+      if (r.type === 'json') {
+        events.push(r.value);
+        if (onEvent) onEvent(r.value);
+      }
+    }
+  };
+
+  const res = await runProcess(claudeBin, args, {
+    env,
+    timeoutMs,
+    input: '',
+    onStdout: (chunk) => consume(parser.push(chunk)),
+  });
+  consume(parser.flush());
+
+  // Fallback: if runProcess delivered stdout without streaming (e.g. a test fake
+  // that returns { stdout } and never calls onStdout), parse the buffer now.
+  if (events.length === 0 && res.stdout) {
+    const p2 = new NdjsonParser();
+    consume(p2.push(res.stdout));
+    consume(p2.flush());
+  }
 
   const turn = normalizeClaudeTurn(events);
   if (!turn.sessionId) {

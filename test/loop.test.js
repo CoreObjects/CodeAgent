@@ -160,3 +160,19 @@ test('pre-turn guard escalation honoring an explicit abort stops the loop before
   assert.equal(r.reason, 'abort');
   assert.equal(calls.worker.length, 0); // aborted at the guard, before the worker ran
 });
+
+test('calls onTaskStart once per task with an incrementing index (for the live reporter)', async () => {
+  const { deps } = makeDeps(
+    [
+      { verdict: 'task_complete', updated_memo: 'a' },
+      { verdict: 'task_complete', updated_memo: 'b' },
+    ],
+    { tasks: [{ id: '1' }, { id: '2' }] },
+  );
+  const starts = [];
+  deps.onTaskStart = (x) => starts.push(x);
+  await runLoop(deps);
+  assert.equal(starts.length, 2);
+  assert.deepEqual(starts.map((s) => s.taskIndex), [1, 2]);
+  assert.equal(starts[0].task.id, '1');
+});

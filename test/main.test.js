@@ -234,3 +234,43 @@ test('runMain refuses to run when the subscription probe fails, and never passes
     assert.ok(!Object.keys(e).some((k) => k.toUpperCase().endsWith('_API_KEY')), 'probe must use a sanitized env');
   }
 });
+
+test('a wired reporter receives live task starts, worker events, and per-turn verdicts', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-rep-'));
+  try {
+    const config = validateConfig({ logDir: tmp, testCommand: ['npm', 'test'] });
+    const env = sanitizeEnv({ PATH: 'p' });
+    const runProcess = makeFakeRunProcess([]);
+
+    const ev = { taskStart: [], turn: [], workerEvent: [], done: [] };
+    const reporter = {
+      taskStart: (x) => ev.taskStart.push(x),
+      turn: (x) => ev.turn.push(x),
+      workerEvent: (x) => ev.workerEvent.push(x),
+      done: (x) => ev.done.push(x),
+      escalation: () => {},
+    };
+
+    const { deps } = buildOrchestrator({
+      config,
+      binaries: BIN,
+      schemaPath: SCHEMA,
+      cwd: tmp,
+      env,
+      runId: 'rep',
+      runProcess,
+      logger: { runDir: path.join(tmp, 'rep'), logTurn: () => {} },
+      askHuman: async () => 'isEven',
+      reporter,
+      totalTasks: 3,
+    });
+    await runLoop(deps);
+
+    assert.equal(ev.taskStart.length, 3); // three tasks announced
+    assert.equal(ev.taskStart[0].total, 3); // progress denominator threaded through
+    assert.equal(ev.turn.length, 5); // five turns rendered (verdicts)
+    assert.ok(ev.workerEvent.length > 0); // worker stream-json events streamed live
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

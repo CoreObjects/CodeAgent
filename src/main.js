@@ -31,6 +31,7 @@ import { createEscalationChannel } from './escalation.js';
 import { createProgressGuard } from './progress-guard.js';
 import { runWithResilience, classifyFailure } from './resilience.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
+import { detectTestCommand } from './detect-test.js';
 import { route } from './router.js';
 import { runLoop } from './loop.js';
 
@@ -75,6 +76,8 @@ export function buildOrchestrator({
   decisionFile,
   onWarn = () => {},
   sleep,
+  reporter,
+  totalTasks = 0,
 } = {}) {
   const log = logger ?? createRunLogger({ baseDir: config.logDir, runId });
   const runDir = log.runDir;
@@ -132,6 +135,7 @@ export function buildOrchestrator({
           allowedTools: config.allowedTools,
           env,
           timeoutMs: config.timeouts.claudeTurnMs,
+          onEvent: reporter ? (ev) => reporter.workerEvent(ev) : undefined, // live stream
         }),
       resilienceOpts,
     );
@@ -151,8 +155,10 @@ export function buildOrchestrator({
 
   const snapshotStart = () => gtSnapshotStart({ runProcess, cwd });
 
+  // Zero-config ground truth: an explicit config testCommand wins; otherwise
+  // auto-detect from the repo each turn (it appears as the worker builds it).
   const collect = (snapshot) =>
-    gtCollect({ runProcess, cwd, snapshot, testCommand: config.testCommand });
+    gtCollect({ runProcess, cwd, snapshot, testCommand: config.testCommand ?? detectTestCommand(cwd) });
 
   const buildDigest = ({ turn, groundTruth, task, turnIndex }) => {
     const { digest, json } = buildEvidenceDigest(
@@ -206,6 +212,15 @@ export function buildOrchestrator({
   };
   const observeProgress = (groundTruth) => guard.observe(groundTruth);
 
+  // Persist every turn to disk AND stream it to the console (if a reporter is wired).
+  const logTurn = (t) => {
+    log.logTurn(t);
+    if (reporter) reporter.turn(t);
+  };
+  const onTaskStart = ({ task, taskIndex }) => {
+    if (reporter) reporter.taskStart({ task, index: taskIndex, total: totalTasks });
+  };
+
   const deps = {
     nextTask,
     setStatus,
@@ -218,10 +233,11 @@ export function buildOrchestrator({
     assemblePrompt,
     renderGoal,
     route,
-    logTurn: log.logTurn,
+    logTurn,
     askHuman: askHumanFn,
     preTurnGuard,
     observeProgress,
+    onTaskStart,
   };
 
   return { deps, runDir, memoPath };
@@ -255,6 +271,8 @@ export async function runMain({
   runId = defaultRunId(),
   askHuman,
   logger,
+  reporter,
+  totalTasks = 0,
 } = {}) {
   const config = validateConfig(configOverride ?? loadConfigFile(cwd));
   const env = sanitizeEnv(baseEnv);
@@ -296,8 +314,11 @@ export async function runMain({
     runProcess,
     logger,
     askHuman,
+    reporter,
+    totalTasks,
   });
   const result = await runLoop(deps);
+  if (reporter) reporter.done(result);
   return { ...result, runDir, binaries };
 }
 

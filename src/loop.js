@@ -29,15 +29,19 @@ export async function runLoop(deps) {
     askHuman,
     preTurnGuard = () => null,
     observeProgress = () => {},
+    onTaskStart = () => {},
     maxTurnsPerTask = 50,
   } = deps;
 
   let turnIndex = 0;
+  let taskIndex = 0;
   let sessionId = null;
 
   for (;;) {
     const task = await nextTask();
     if (!task) return { reason: 'done', turns: turnIndex };
+    taskIndex += 1;
+    onTaskStart({ task, taskIndex }); // progress hook for the live reporter — no judgment
 
     let pendingInstruction = null;
     let taskTurns = 0;
