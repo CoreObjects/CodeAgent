@@ -1,0 +1,13 @@
+{
+  "name": "codeagent-supervisor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Supervisor agent: codex (监工) supervises Claude Code (worker) to implement a PRD into code. Thin orchestrator, zero decision logic.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

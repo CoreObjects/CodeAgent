@@ -1,0 +1,1283 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": "1",
+        "title": "Subprocess wrapper with Windows .cmd/.exe handling",
+        "description": "Implement the single module that spawns all child processes with Windows-aware launching, per-call wall-clock timeouts, and kill-tree on timeout.",
+        "details": "Satisfies REQ-001. Spawn .cmd shims (claude.cmd, task-master.cmd) via cmd.exe /c with argv arrays; spawn .exe binaries (codex.exe) directly without a shell. Enforce a configurable timeout per invocation and terminate the entire descendant process tree when it fires, returning a timeout flag alongside exit code and captured streams. Never concatenate arguments into one string. This module is the only place in the codebase allowed to call child_process; downstream modules depend on it.",
+        "testStrategy": "Unit tests with fake processes covering .cmd spawn (no ENOENT), .exe direct spawn, timeout firing with descendant termination, and array argument passthrough including args with embedded spaces.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Argument array builder for .cmd vs .exe",
+            "description": "Build a helper that constructs spawn argv arrays correctly for .cmd shims versus .exe binaries.",
+            "details": "Satisfies REQ-001 for parent task 1. Detect target extension and emit either ['cmd.exe','/c',shim,...args] for .cmd shims (claude.cmd, task-master.cmd) or [exe,...args] for .exe binaries (codex.exe). Always treat args as a real array so arguments containing spaces are passed unquoted-by-string. Refuse to accept a pre-joined command string at the API boundary so callers cannot bypass array safety.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "Unit tests assert .cmd input produces a cmd.exe /c invocation and .exe input is spawned directly, and that args with embedded spaces survive round-trip.",
+            "updatedAt": "2026-05-30T03:14:50.949Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Windows-aware spawn function",
+            "description": "Implement the actual spawn call using node:child_process that consumes the argv builder.",
+            "details": "Satisfies REQ-001 for parent task 1. Use child_process.spawn with shell:false for .exe targets and shell:false plus cmd.exe /c for .cmd targets so PowerShell quoting rules never enter the picture. Capture stdout and stderr as separate streams and resolve only after both close. This module is the sole place in the repo allowed to call child_process; downstream modules import this function rather than spawning themselves.",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Spawn a fake .cmd and a fake .exe in tests; assert exit code, stdout, and stderr are returned without ENOENT and without shell interpretation of argv.",
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:14:50.960Z"
+          },
+          {
+            "id": 3,
+            "title": "Per-call timeout with kill-tree",
+            "description": "Enforce a configurable wall-clock timeout that terminates the entire descendant process tree.",
+            "details": "Satisfies REQ-001 for parent task 1. Start a timer per invocation; on fire, use taskkill /T /F on Windows (via the same wrapper) to terminate the root and its descendants and resolve with a timeout flag alongside whatever streams were captured. Never leave orphan grandchildren — particularly important because codex and claude shell to subprocesses internally. Expose timeoutMs as a per-call parameter with a config default.",
+            "status": "done",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "Spawn a process that itself spawns a long-sleep child; assert the timer fires, both processes exit, and the result includes timedOut=true.",
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:14:50.967Z"
+          },
+          {
+            "id": 4,
+            "title": "Result aggregation and error normalization",
+            "description": "Aggregate exit code, signal, streams, and timeout flag into a single normalized result object.",
+            "details": "Satisfies REQ-001 for parent task 1. Define one result shape { code, signal, stdout, stderr, timedOut, durationMs } returned from every spawn path so callers in REQ-003, REQ-004, REQ-006, REQ-010, REQ-012 see identical contracts. Normalize ENOENT and spawn errors into the same shape with code=null and a structured error field rather than throwing. This keeps downstream branching uniform.",
+            "status": "done",
+            "dependencies": [
+              3
+            ],
+            "testStrategy": "Unit tests confirm both successful exit and ENOENT produce the same result shape and that timedOut is set only when the timer fired.",
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:14:50.974Z"
+          },
+          {
+            "id": 5,
+            "title": "Wrapper fake-process test suite",
+            "description": "Author the foundational test suite using fake child processes covering every spawn branch.",
+            "details": "Satisfies REQ-001 for parent task 1. Exercise .cmd spawn (no ENOENT), .exe direct spawn, descendant kill on timeout, argv pass-through with embedded spaces, and the normalized result shape. Use a tiny Node helper script as the fake process so tests run cross-machine. This suite is the regression net for the only module allowed to spawn children.",
+            "status": "done",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "testStrategy": "Run the suite locally; gate task 1 on all five branches passing.",
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:14:50.981Z"
+          }
+        ],
+        "updatedAt": "2026-05-30T03:14:50.981Z"
+      },
+      {
+        "id": "2",
+        "title": "Line-buffered NDJSON stream parser",
+        "description": "Implement a chunk-tolerant NDJSON parser that splits on newline, parses only complete JSON lines, and routes non-JSON to a raw channel.",
+        "details": "Satisfies REQ-002. The parser must buffer trailing partial lines across chunk boundaries and emit complete JSON objects once their newline arrives. Strip carriage returns before parsing so CRLF streams from Windows pipes parse identically to LF. Non-JSON lines must not throw; surface them on a raw channel so the caller can log them. This parser feeds the Claude Code one-turn runner consuming stream-json output.",
+        "testStrategy": "Unit tests covering chunked split objects, partial trailing lines retained across chunks, CRLF normalization, and garbage non-JSON lines routed to the raw channel without exception.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Chunk buffer and newline splitter",
+            "description": "Implement the core split-on-newline state machine that buffers across chunk boundaries.",
+            "details": "Satisfies REQ-002 for parent task 2. Maintain a string buffer; on each chunk append the bytes, split on \\n, retain the trailing partial line in the buffer, and yield only complete lines to the next stage. Do not yield a line until its newline has arrived so a JSON object split across two chunks is parsed once both arrive. Feeds REQ-003's stream-json consumer.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test feeds an object byte-by-byte in two chunks and asserts exactly one line is emitted after the second chunk.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "CR stripping for Windows pipes",
+            "description": "Strip carriage returns before parsing so CRLF streams parse identically to LF.",
+            "details": "Satisfies REQ-002 for parent task 2. Replace \\r before the JSON.parse call (not in the buffer itself, to preserve byte counts for logging) so a CRLF-terminated line yields the same JSON as a LF-terminated line. This matters because Windows pipes from claude.cmd shim emit CRLF. Keep the strip localized to the parse step.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test feeds a CRLF-terminated JSON object and asserts the parsed value equals the LF-terminated case.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "JSON parse with raw channel fallback",
+            "description": "Parse complete lines as JSON and route non-JSON lines to a raw channel without throwing.",
+            "details": "Satisfies REQ-002 for parent task 2. Wrap JSON.parse in try/catch; on failure, emit the original line on a separate raw channel so the caller can log it (REQ-013) instead of crashing the run. Non-JSON lines occur when claude prints diagnostic output or when permission prompts leak. The parser exposes both channels as event-style callbacks or async iterables.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "testStrategy": "Feed a mix of valid JSON and garbage lines; assert valid objects appear on json channel and garbage appears verbatim on raw channel with no exception thrown.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Parser test suite for chunk/partial/CRLF/garbage",
+            "description": "Author the regression suite covering the four canonical edge cases.",
+            "details": "Satisfies REQ-002 for parent task 2. Cases: chunked split objects, partial trailing lines retained across chunks, CRLF normalization, and garbage non-JSON lines routed to the raw channel without exception. The suite locks in the line-buffered semantics that REQ-003 depends on for session-id capture.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "testStrategy": "Run the suite; gate task 2 on all four canonical edge cases passing.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "3",
+        "title": "Config load, path resolution, env sanitization, startup probe",
+        "description": "Load and validate orchestrator configuration, resolve absolute binary paths, sanitize child env, and probe both agents under subscription auth.",
+        "details": "Satisfies REQ-012. Resolve absolute paths for claude, codex, and task-master binaries and fail immediately with a clear message if any are missing. Pass a sanitized environment to child processes that strips ANTHROPIC_API_KEY, OPENAI_API_KEY, and any *_API_KEY variables so subscription auth is enforced at the process boundary. Run a startup probe that issues a trivial prompt to each agent and confirms both succeed without an API key. Never include --bare in any claude invocation built by config consumers.",
+        "testStrategy": "Unit tests for missing-binary failure, env stripping of *_API_KEY variants, and a probe test that records the trivial prompt round-trip succeeds for both agents under subscription.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Config schema and loader",
+            "description": "Define and load the orchestrator's configuration object with validation.",
+            "details": "Satisfies REQ-012 for parent task 3. Define a config schema covering binary paths (claude, codex, task-master), per-call timeouts, memo cap, digest cap, test command, log directory, and permission posture. Load from a single config file; reject unknown keys to catch typos early. Fail with a clear message on validation error rather than running with defaults that mask misconfiguration.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit tests load a valid config, a missing-key config (default fill), and an unknown-key config (rejection) and assert behavior.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Binary path resolution",
+            "description": "Resolve absolute paths for claude, codex, and task-master, failing immediately when missing.",
+            "details": "Satisfies REQ-012 for parent task 3. Use which/where lookups plus explicit config overrides to resolve the three binaries to absolute paths before any run. If any is missing, fail immediately with a clear message naming the binary and the lookup attempted. The resolved paths feed every call site through the REQ-001 wrapper.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test simulates a missing binary and asserts a clear failure naming which binary is missing; positive test asserts absolute paths are returned.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Env sanitization stripping *_API_KEY",
+            "description": "Build the child-process env by stripping every variable matching *_API_KEY.",
+            "details": "Satisfies REQ-012 for parent task 3. Filter process.env removing ANTHROPIC_API_KEY, OPENAI_API_KEY, and any variable whose name ends with _API_KEY so subscription auth is enforced at the process boundary. Preserve PATH, PYTHONUTF8, and other non-key variables. Apply this sanitized env to every spawn call site routed through REQ-001.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test injects fake *_API_KEY variables and asserts the produced child env contains zero matching keys while preserving PATH.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Startup auth probe",
+            "description": "Probe both agents with a trivial prompt and confirm both succeed under subscription auth.",
+            "details": "Satisfies REQ-012 for parent task 3. Issue a tiny prompt to claude -p and to codex exec using the sanitized env from subtask 3; assert both return without error and without complaining about a missing API key. Record probe results so later turns can fail-fast if subscription auth has lapsed. Never include --bare in the claude invocation.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3
+            ],
+            "testStrategy": "Integration test runs the probe and asserts both round-trips succeed; a negative test injects a fake API key into env and asserts it does not appear in the spawned child.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "4",
+        "title": "Environment preflight and verified invocation script",
+        "description": "Implement preflight checks plus a callable script that captures the verified task-generation path so pitfalls are not rediscovered at runtime.",
+        "details": "Satisfies REQ-019. Verify the real python interpreter is present (reject the python3 Microsoft Store stub) and run UTF-8 scripts with PYTHONUTF8=1 because the host locale is GBK. Confirm the hyphenated task-master binary resolves and that a headless claude -p round-trip returns under subscription. Extract the verified task-generation path (drive claude CLI directly, never the task-master claude-code agent-SDK provider that blocks on this platform) as a callable script. Record the verified pitfalls in a structured form so they can later be injected into the codex system prompt by REQ-014.",
+        "testStrategy": "Preflight tests assert the python3 stub is rejected with a clear message, resolved paths for python and task-master are reported, and the verified script runs end-to-end producing tasks via the direct claude CLI path.",
+        "priority": "medium",
+        "dependencies": [
+          "3"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Python interpreter check rejecting python3 stub",
+            "description": "Verify the real python interpreter is present and reject the Microsoft Store python3 shim.",
+            "details": "Satisfies REQ-019 for parent task 4. Resolve `python` and `python3` on PATH; if `python3` is the Store stub (recognized by zero-byte exit 49 with no output) fail with a clear message naming the resolved path. Confirm the real interpreter version is reported. Set PYTHONUTF8=1 in the verified script's env because the host locale is GBK and UTF-8 scripts otherwise crash.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Preflight test asserts the python3 Store stub is rejected with a clear message and the real python path is reported with version.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "task-master and claude path probes",
+            "description": "Confirm the hyphenated task-master binary resolves and that headless claude returns under subscription.",
+            "details": "Satisfies REQ-019 for parent task 4. Resolve `task-master` (hyphenated — the `taskmaster` lookup used by some helper scripts does not match on this host) and run a trivial subcommand to confirm it executes. Run a headless `claude -p --output-format json` round-trip and assert it returns in seconds under the Max subscription with no API key present. Both probes route through REQ-001.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Preflight test asserts resolved task-master path, a working `task-master --version` call, and a fast subscription-auth claude round-trip.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Verified task-generation script extraction",
+            "description": "Extract the verified direct-claude task-generation path into a callable script.",
+            "details": "Satisfies REQ-019 for parent task 4. Capture the verified sequence (drive `claude` CLI directly to produce the task breakdown, never the task-master `claude-code` agent-SDK provider that blocked past 16 minutes on this platform) as a single callable script. The script must run end-to-end and produce a tasks.json validated by `task-master list`. Keep PYTHONUTF8=1 in its env.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "testStrategy": "Run the script against a throwaway PRD and assert it produces a tasks.json that `task-master list` parses successfully.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Structured pitfalls record for codex prompt injection",
+            "description": "Emit the verified pitfalls in a structured form ready for REQ-014 prompt embedding.",
+            "details": "Satisfies REQ-019 for parent task 4. Produce a small structured record naming each pitfall (python3 stub vs python with PYTHONUTF8=1, hyphenated task-master, direct claude CLI over agent-SDK provider) with the verified workaround so REQ-014's codex prompt can inline them. The supervisor must steer the worker to the verified path from the first turn rather than rediscovering pitfalls. Persist this record so it survives across runs. Include the codex-exec stdin-EOF pitfall (codex blocks reading stdin until EOF, so always pipe or close stdin) alongside the python3-stub / task-master-hyphen / claude-CLI pitfalls.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "testStrategy": "Unit test asserts the record contains all three pitfalls with both the failure mode and the verified workaround, in a shape REQ-014 can substitute into a prompt template.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "5",
+        "title": "Claude Code one-turn runner",
+        "description": "Run Claude Code for exactly one worker turn in headless stream-json mode, capture the session id, and normalize the turn output.",
+        "details": "Satisfies REQ-003. Invoke claude with --output-format stream-json --verbose, never --bare, and capture the session id from the initial init event so subsequent turns can resume via --resume <session_id>. Wait for the stream result event (or process exit / timeout) before returning a normalized turn object containing worker text, tool-use calls, tool results with per-call error flags, and the terminal result event. Configure permission mode and allow-list so the worker runs without interactive prompts. Consumes the subprocess wrapper (REQ-001) and the NDJSON parser (REQ-002).",
+        "testStrategy": "Tests using recorded stream-json transcripts verify session-id capture, --resume on the second turn, normalized tool-use enumeration with error flags, and termination only on result/exit/timeout.",
+        "priority": "high",
+        "dependencies": [
+          "1",
+          "2"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Argument builder for stream-json + resume + permission",
+            "description": "Construct the claude argv for one-turn headless mode with stream-json output and resume support.",
+            "details": "Satisfies REQ-003 for parent task 5. Always include `--output-format stream-json --verbose`; never include `--bare`. On the first turn omit `--resume`; on subsequent turns pass `--resume <session_id>` captured from the init event. Configure permission mode and allow-list so the worker runs without interactive prompts, per the open question Q2 resolution (Phase 4 will fix the posture).",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test asserts the argv contains stream-json/verbose, never --bare, and includes --resume only when a session id is supplied.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Session id capture from init event",
+            "description": "Parse the stream-json init event to capture the session id for subsequent --resume turns.",
+            "details": "Satisfies REQ-003 for parent task 5. Wire the REQ-002 parser to inspect the first emitted JSON object on the stream; extract the session id from the init event and stash it so the next turn can resume. Treat a missing init event as a hard error since later turns depend on the id. The id is opaque to the orchestrator beyond resume passthrough.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Replay a recorded stream-json transcript and assert the session id is captured and surfaces unchanged to the resume argv on the next turn.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Turn normalization (claims, tool-uses, tool-results, result event)",
+            "description": "Normalize the stream into a single turn object containing worker text, tool-uses with error flags, and the terminal result event.",
+            "details": "Satisfies REQ-003 for parent task 5. Consume the parsed stream-json events and produce { sessionId, finalText, toolUseCalls, toolResults (with isError per call), resultEvent } so REQ-005 can build its claims block deterministically. Preserve event ordering inside arrays. Do not interpret the contents — that is codex's job.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "Unit tests against recorded transcripts assert tool-use enumeration matches the stream order and each tool result's error flag is preserved.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Termination on result/exit/timeout",
+            "description": "Wait for the stream result event, process exit, or timeout before returning the normalized turn.",
+            "details": "Satisfies REQ-003 for parent task 5. The runner returns only when one of three signals fires: the stream-json `result` event arrives, the process exits, or the REQ-001 timeout terminates the tree. Return the partially-normalized turn plus a termination reason. Never return on a stop_reason inside an assistant event; the result event is the canonical turn boundary.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "testStrategy": "Tests fire each termination path and assert the runner resolves once and only once, carrying the correct reason.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "One-turn runner integration test",
+            "description": "Wire subtasks 1–4 into a callable runOneTurn(prompt, sessionId?) and exercise against recorded streams.",
+            "details": "Satisfies REQ-003 for parent task 5. Compose the argument builder, REQ-001 spawn, REQ-002 parser, session-id capture, normalization, and termination into a single entry point. Provide first-turn and resumed-turn smoke tests using a recorded transcript fixture. This is the worker-side primitive consumed by the loop in task 15.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "testStrategy": "Replay first-turn and resumed-turn fixtures and assert the normalized turn matches the golden shape; gate task 5 on both passing.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "6",
+        "title": "Ground-truth collector",
+        "description": "Independently observe repository state pre- and post-turn via git snapshot, diff statistics, status, and optional test exit code.",
+        "details": "Satisfies REQ-004. Before the worker turn snapshot HEAD and porcelain status; after the turn compute git diff stats versus the snapshot, the changed-file list scoped to the turn, current porcelain status, and, when a test command is configured, run it via the subprocess wrapper and capture exit code plus an output tail. The collector must emit only observed values and perform no interpretation, leaving divergence judgment to the digest and to codex. All shell-outs route through REQ-001.",
+        "testStrategy": "Integration tests against a scratch git repository verify changed-file list scoping using the pre-turn HEAD, correct diff stats on edits, and faithful test exit-code passthrough including non-zero codes.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Pre-turn HEAD and porcelain snapshot",
+            "description": "Snapshot HEAD commit and porcelain status before the worker turn begins.",
+            "details": "Satisfies REQ-004 for parent task 6. Run `git rev-parse HEAD` and `git status --porcelain` through the REQ-001 wrapper before the worker is launched; record both values keyed by turn index so the post-turn computation can diff against them. Do not interpret state — the collector only observes. Operate from the project working tree.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Integration test in a scratch repo asserts the snapshot captures the current HEAD and porcelain output verbatim.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Post-turn diff stats and changed-file list",
+            "description": "After the turn, compute diff stats and changed-file list scoped to the pre-turn HEAD.",
+            "details": "Satisfies REQ-004 for parent task 6. Run `git diff --shortstat <pre-turn-HEAD>` and `git diff --name-only <pre-turn-HEAD>` so the changed-file list is bounded to this turn rather than the whole working tree. Capture insertions/deletions/files-changed counts. The pre-turn HEAD comes from subtask 1.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Integration test edits a file during a simulated turn and asserts the diff stats and changed-file list match exactly.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Post-turn porcelain status",
+            "description": "Capture post-turn porcelain status independently of the worker's claims.",
+            "details": "Satisfies REQ-004 for parent task 6. Run `git status --porcelain` after the turn and record the output verbatim so the digest can show divergence between the worker's claim of clean state and any leftover untracked/modified files. Operates as a sibling observation to the diff in subtask 2.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Integration test leaves an untracked file in a simulated turn and asserts the porcelain output includes it.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Optional test runner with exit code and tail",
+            "description": "When a test command is configured, run it and capture exit code plus an output tail.",
+            "details": "Satisfies REQ-004 for parent task 6. If config.testCommand is set, run it through the REQ-001 wrapper after the diff is captured; record the exit code faithfully (including non-zero) and the tail of stdout/stderr. When unset, omit the field entirely rather than emitting a fake passing result. The collector performs no test-result interpretation.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3
+            ],
+            "testStrategy": "Tests configure a failing test command and assert the non-zero exit code and tail are preserved; an unconfigured run omits the field.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "7",
+        "title": "Bounded evidence digest builder",
+        "description": "Build the bounded claims-vs-facts digest combining the worker turn with ground truth and emit mechanical divergence hints.",
+        "details": "Satisfies REQ-005. Merge the normalized worker turn from REQ-003 (claims, stop reason, tool-use count, actions_taken) with ground truth from REQ-004 (HEAD before/after, diff stats, changed files, porcelain, test exit and tail) into a single digest whose claims and facts blocks are distinct fields. Hard-cap every free-text field, cap arrays with overflow sentinels, retain only the tail of test output, and keep total serialized size at most 6000 characters. Emit divergence_hints (claimed-done-but-no-diff, tests-referenced-but-not-run, tool-errors-present) as data only; no code path may use them to alter routing.",
+        "testStrategy": "Unit tests verify the 6000-character cap, array overflow sentinels, claims/facts separation, and that divergence hints fire as data only without influencing the digest beyond an additional field.",
+        "priority": "high",
+        "dependencies": [
+          "5",
+          "6"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Claims block extraction",
+            "description": "Build the claims block from the normalized worker turn.",
+            "details": "Satisfies REQ-005 for parent task 7. Map the REQ-003 normalized turn into a claims block containing final worker text, stop reason, result subtype, tool-use count, and actions_taken (per-call tool name and error flag). Keep the block separate from facts so codex can see divergence by direct comparison. No interpretation occurs here.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test feeds a fixture turn and asserts the claims block contains exactly the expected fields with values matching the input.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Facts block from ground truth",
+            "description": "Build the facts block from REQ-004 ground-truth output.",
+            "details": "Satisfies REQ-005 for parent task 7. Map ground truth into a facts block: HEAD before/after, diff stats, changed-file list, porcelain status, test exit code, and tail. Mirror the names in the schema so codex's prompt can reference them precisely. The facts block must remain a distinct top-level field — never merged with claims.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test feeds a fixture ground truth and asserts the facts block contains the seven expected fields with values matching the input.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Bounding: caps, overflow sentinels, test tail",
+            "description": "Hard-cap free-text fields, cap arrays with overflow sentinels, and retain only the tail of test output.",
+            "details": "Satisfies REQ-005 for parent task 7. Truncate every string field at a fixed character cap, replace overflow array tails with a sentinel like `…+N more`, and keep only the last N bytes of test output. The caps must compose so the total serialized digest is at most 6000 characters. Compaction is mechanical and identical across runs.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "testStrategy": "Unit tests assert overlong strings are truncated, overlong arrays carry the sentinel, and the total serialized size never exceeds 6000 characters.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Divergence hints emitter (data only)",
+            "description": "Emit mechanical divergence hints as data, with no code path acting on them to alter routing.",
+            "details": "Satisfies REQ-005 for parent task 7. Compute claimed-done-but-no-diff, tests-referenced-but-not-run, and tool-errors-present flags from claims and facts; surface them as a divergence_hints field. The orchestrator must never read these flags to influence the verdict — they exist only so codex can spot patterns. Enforce this design constraint with a contract test.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "testStrategy": "Unit tests assert each flag fires under the right input pattern; a contract test asserts no caller reads divergence_hints outside the digest builder itself.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Digest serializer with 6000-char total cap",
+            "description": "Serialize the assembled digest and enforce the 6000-character total cap.",
+            "details": "Satisfies REQ-005 for parent task 7. Serialize the {claims, actions_taken, facts, divergence_hints} object to JSON; if serialization exceeds 6000 characters, re-run bounding with tighter sub-caps until it fits. Return both the JSON string and the byte count so REQ-013 can log size per turn. Refuse to ship an over-cap digest to codex.",
+            "status": "pending",
+            "dependencies": [
+              3,
+              4
+            ],
+            "testStrategy": "Unit tests cap-stuff each field and assert the serializer returns a string at most 6000 chars with all four sections preserved.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "8",
+        "title": "codex supervisor invocation with enforced decision schema",
+        "description": "Invoke codex exec under read-only sandbox with the decision output schema and validate the returned decision locally, retrying once on malformed output.",
+        "details": "Satisfies REQ-006. Launch codex exec with sandbox read-only and -c approval_policy=\"never\" so the supervisor cannot modify files. Pass an output schema file plus output-last-message file, and supply a bounded prompt of role + goal + rolling memo + this-turn evidence digest (REQ-005) — never a growing transcript. Read the decision file, validate against the JSON schema (assessment, verdict enum, cited_evidence with minItems 1, updated_memo, optional message_to_claude / escalation_question / category / fake_done_flag), and on malformed output re-ask exactly once before producing an escalate outcome. Depends on REQ-005 for the digest input and REQ-012 for resolved binary paths and sanitized env. VERIFIED on this host (2026-05-29): the evidence digest is delivered by PIPING it to codex stdin; codex exec BLOCKS reading stdin until EOF, so stdin MUST be piped or closed or the turn stalls (this caused an earlier multi-minute hang). Full invocation: codex exec --json -s read-only -c approval_policy=never --skip-git-repo-check --output-schema <schema> -o <decision>. read-only is enforced on this host (a codex write attempt was rejected by policy) and per-turn latency is ~10-30s; an intermittent non-fatal 'failed to refresh available models' child-process timeout may add a few seconds.",
+        "testStrategy": "Tests cover schema-valid happy path, malformed-decision single retry then escalate, refusal of any decision lacking cited_evidence, and a sandbox check confirming a codex attempt to write a file fails at the process level.",
+        "priority": "high",
+        "dependencies": [
+          "7",
+          "3"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "codex exec argument builder",
+            "description": "Build the codex exec argv with sandbox, approval policy, schema, and output-last-message files.",
+            "details": "Satisfies REQ-006 for parent task 8. Assemble argv: `codex exec --sandbox read-only -c approval_policy=\"never\" --output-schema <schema.json> --output-last-message <out.json>` so the supervisor cannot modify files and writes its decision to a deterministic location. Resolved binary path comes from REQ-012; sanitized env is applied via the REQ-001 wrapper. Never inject an API key. Include --json and --skip-git-repo-check in the argv, and PIPE the evidence digest to codex stdin (stdin must reach EOF — an open stdin stalls codex indefinitely).",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test asserts the argv always contains sandbox read-only and approval_policy never, and points at the configured schema and output files.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Bounded prompt assembly (role + goal + memo + digest)",
+            "description": "Construct the bounded codex prompt from role, current goal, rolling memo, and this-turn evidence digest.",
+            "details": "Satisfies REQ-006 for parent task 8. Assemble exactly four sections under fixed delimiters: role (from REQ-014 system prompt), current goal (from REQ-010 task), rolling memo (verbatim from REQ-009), and this-turn evidence digest (from REQ-005). Never include a growing transcript. Bound on assembly so the prompt size stays predictable.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test asserts the prompt contains the four delimited sections in order and excludes any prior-turn transcript content.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Decision file read + schema validation",
+            "description": "Read the output-last-message file and validate the parsed decision against the JSON schema.",
+            "details": "Satisfies REQ-006 for parent task 8. After codex exits, read the output file, JSON.parse it, and validate against the schema (assessment, verdict enum, cited_evidence with minItems 1, updated_memo, optional message_to_claude/escalation_question/category/fake_done_flag). Reject any decision lacking at least one cited evidence item. Validation is local — use ajv or equivalent.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "Unit tests cover a schema-valid happy path and a decision missing cited_evidence (rejected).",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Malformed-decision single re-ask then escalate",
+            "description": "On malformed output, re-ask exactly once before producing an escalate outcome.",
+            "details": "Satisfies REQ-006 for parent task 8. If parse or validation fails, build a second prompt that includes the original prompt plus a short re-ask instruction and invoke codex once more. If the second attempt also fails, produce an escalate decision synthesized by the orchestrator (the only place this is allowed) rather than guessing a verdict. Record both attempts.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "testStrategy": "Unit test simulates two malformed responses and asserts exactly one retry occurred and the outcome is escalate, not a guessed verdict.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Sandbox file-write drill",
+            "description": "Verify codex cannot modify files at the process level under sandbox read-only.",
+            "details": "Satisfies REQ-006 for parent task 8. Craft a probe prompt instructing codex to write a file; assert the attempt fails at the sandbox boundary and the decision file is the only output. This validates that the sandbox flag actually constrains the supervisor and that the design invariant (codex never edits code) is enforced by the OS, not by trust.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Integration drill prompts codex to write /tmp/probe; assert the file does not appear and codex returns a decision noting the constraint.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "9",
+        "title": "Verdict router (pure mechanical switch)",
+        "description": "Implement a pure function mapping the codex verdict enum to a tagged orchestrator action with no interpretation of assessment or evidence.",
+        "details": "Satisfies REQ-007. The router reads only verdict and the next-message / question fields it forwards, mapping continue, redirect, task_complete, escalate, and abort to exactly one action each. It must never read assessment text, cited_evidence, fake_done_flag, or any ground-truth field to alter behavior, preserving the design constraint that all judgment lives in codex. Exhaustively cover every enum value.",
+        "testStrategy": "Exhaustive unit tests for every enum value confirm the correct tagged action and that no branch reads assessment or cited_evidence content.",
+        "priority": "high",
+        "dependencies": [
+          "8"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Pure switch over verdict enum",
+            "description": "Implement a pure function mapping each verdict enum value to exactly one tagged action.",
+            "details": "Satisfies REQ-007 for parent task 9. Switch on verdict ∈ {continue, redirect, task_complete, escalate, abort} and return a tagged action — { kind, payload } — without reading any other decision field beyond the next-message/question fields it forwards. The router is pure: same input, same output, no side effects. All judgment lives in codex; the router only relays.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test feeds each enum value and asserts the exact tagged action returned.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Field forwarding for message_to_claude and escalation_question",
+            "description": "Forward only the fields needed by each branch and leave everything else untouched.",
+            "details": "Satisfies REQ-007 for parent task 9. continue and redirect forward message_to_claude byte-for-byte; escalate forwards escalation_question; task_complete and abort forward no message. Never rewrite or paraphrase the forwarded strings. This preserves the design that codex's voice reaches the worker (or the human) unmodified.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit tests assert each branch carries the right field unchanged and omits the others.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Exhaustive enum coverage tests",
+            "description": "Lock in coverage of every enum value with a test per branch.",
+            "details": "Satisfies REQ-007 for parent task 9. One test per enum value asserts the correct tagged action; a default-case test asserts an unknown verdict throws rather than silently falling through (since REQ-006 already rejects out-of-schema verdicts). This is the regression net the loop depends on.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "Run the suite; gate task 9 on all five enum values plus the default-case throw.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Contract test: no read of assessment or cited_evidence",
+            "description": "Prove the router never reads assessment text, cited_evidence, fake_done_flag, or ground truth.",
+            "details": "Satisfies REQ-007 for parent task 9. Pass the router a decision whose assessment, cited_evidence, and fake_done_flag are Proxy objects that throw on access; assert the router still returns the correct action. This enforces the design constraint that all judgment lives in codex — the orchestrator literally cannot read the assessment without crashing.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Run the proxy-decision test for each verdict and assert no Proxy access trap fires.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "10",
+        "title": "Rolling memo store with size bound",
+        "description": "Persist the codex-authored rolling memo verbatim and replay it verbatim on the next turn under a fixed delimiter.",
+        "details": "Satisfies REQ-009. Write the updated_memo from each codex decision to disk byte-for-byte and on the next turn replay it into the codex prompt under the agreed delimiter. Enforce a maximum size (default 6000 characters) by emitting a log warning on overflow and passing the memo through rather than silently truncating, leaving compaction to codex itself. No interpretation of memo contents.",
+        "testStrategy": "Unit tests verify byte-for-byte round-trip of updated_memo, correct delimiter framing in the next prompt, and that overcap memos log a warning without truncation.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Byte-for-byte memo writer",
+            "description": "Persist the codex updated_memo verbatim to disk after each turn.",
+            "details": "Satisfies REQ-009 for parent task 10. Write the updated_memo string exactly as codex returned it, without trimming, normalizing whitespace, or re-encoding. Use a fixed file path per run so the next turn knows where to read. The store performs no interpretation — it is a dumb sink.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test writes a memo containing trailing whitespace and unicode and asserts the file bytes match exactly.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Verbatim replay under fixed delimiter",
+            "description": "Replay the memo into the next codex prompt under the agreed delimiter unchanged.",
+            "details": "Satisfies REQ-009 for parent task 10. On the next turn, read the persisted memo and insert it into REQ-008's prompt-assembly step under a fixed delimiter (e.g., `--- MEMO ---` … `--- /MEMO ---`) so codex sees the same framing each turn. Never modify the memo body during replay.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test asserts the replayed prompt contains the delimiter framing and the memo body matches the persisted bytes.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Size cap with warning log (no truncation)",
+            "description": "On overflow log a warning and pass the memo through; never silently truncate.",
+            "details": "Satisfies REQ-009 for parent task 10. If the memo exceeds the configured cap (default 6000 characters) emit a log warning via REQ-013's sink and pass the full memo through. Compaction is codex's responsibility per REQ-014 self-compaction guidance; the store must not paper over that obligation by chopping bytes.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test writes an overcap memo and asserts a warning is logged exactly once and the memo round-trips at full length.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Round-trip and overflow regression tests",
+            "description": "Author the regression suite covering write, replay, and overflow behaviors.",
+            "details": "Satisfies REQ-009 for parent task 10. Cases: byte-for-byte round-trip including unicode and whitespace, delimiter framing on replay, and overcap warning with full passthrough. This suite locks in the design that compaction lives in codex, not the orchestrator.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3
+            ],
+            "testStrategy": "Run the suite; gate task 10 on all three behaviors verified.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "11",
+        "title": "codex system prompt and escalation whitelist",
+        "description": "Author the codex supervisor prompt defining its role, the escalation whitelist, memo self-compaction guidance, and the verified host pitfalls.",
+        "details": "Satisfies REQ-014. The prompt establishes codex as supervisor that never edits code, only emits verdicts. It enumerates escalation categories (irreversible/destructive operations, spending real money, security/privacy/legal trade-offs, scope/product decisions not settled by the PRD, judgment-the-human-would-want) so codex itself decides membership. It instructs codex to keep updated_memo under the size cap via self-compaction. Critically it embeds the host's verified pitfalls captured in REQ-019 (python vs python3 stub with PYTHONUTF8=1, hyphenated task-master, direct claude CLI instead of the blocking agent-SDK provider) so codex steers the worker to the verified path from the first turn rather than rediscovering them.",
+        "testStrategy": "Review checklist confirms all escalation categories enumerated, no-file-edit and memo-cap instructions present, and verified pitfalls from REQ-019 are inlined; an end-to-end probe shows codex emits a schema-valid decision against this prompt.",
+        "priority": "medium",
+        "dependencies": [
+          "8"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Supervisor role and no-edit instruction",
+            "description": "Draft the codex prompt opening defining the supervisor role and forbidding file edits.",
+            "details": "Satisfies REQ-014 for parent task 11. State explicitly that codex is the supervisor (监工), never edits code, and acts only through verdicts in the decision schema. Reinforce that the read-only sandbox at the process level (REQ-006) is the safety net but the design intent is that codex chooses not to need it. Keep the opening short to preserve context budget.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Review checklist confirms the opening states role, no-file-edit constraint, and verdict-only action; a smoke run shows codex declines a prompt asking it to edit a file.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Escalation whitelist enumeration",
+            "description": "Enumerate the escalation categories so codex itself decides membership.",
+            "details": "Satisfies REQ-014 for parent task 11. List the five categories: irreversible/destructive operations, spending real money, security/privacy/legal trade-offs, scope/product decisions not settled by the PRD, and judgment-the-human-would-want. Instruct codex to set escalation_category accordingly and to leave it `none` otherwise. The orchestrator never inspects this; codex owns the judgment.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Review checklist confirms all five categories present; smoke probe with a destructive-action prompt asserts codex returns escalate with the correct category.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Memo self-compaction guidance",
+            "description": "Instruct codex to keep updated_memo under the configured size cap by self-compaction.",
+            "details": "Satisfies REQ-014 for parent task 11. Tell codex the memo cap (default 6000 characters), that the store warns but does not truncate (REQ-009), and that compaction is its responsibility — to summarize older memo content rather than letting it grow. Pair with a hint about which memo content tends to stay load-bearing across turns.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Review checklist confirms the cap and self-compaction instruction; a turn-series probe asserts the memo stays under cap across multiple turns.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Verified pitfalls inline from REQ-019",
+            "description": "Embed the verified host pitfalls so codex steers the worker to the verified path from turn one.",
+            "details": "Satisfies REQ-014 for parent task 11. Substitute the structured pitfalls record produced by task 4's subtask 4 into the prompt: python vs python3 stub with PYTHONUTF8=1, hyphenated task-master, direct claude CLI over the blocking task-master claude-code agent-SDK provider. Without this codex would re-discover the pitfalls each run and waste turns on dead paths. Keep the inlined text short.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Review checklist confirms all three pitfalls inlined with their workarounds; a smoke probe shows codex's first-turn message_to_claude prefers the verified path.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "End-to-end prompt probe",
+            "description": "Run codex against the assembled prompt and confirm a schema-valid decision is emitted.",
+            "details": "Satisfies REQ-014 for parent task 11. Compose subtasks 1–4 into the final system prompt and invoke codex (via REQ-006) on a representative bounded prompt. Assert the decision validates against the schema with at least one cited evidence item. This is the prompt's acceptance gate.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "testStrategy": "Integration probe asserts the decision validates against the schema and the escalation category and memo behave per subtasks 2 and 3.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "12",
+        "title": "Trunk wrapper for task-master next/show/set-status",
+        "description": "Implement a pass-through wrapper around task-master next, show, and set-status that contains no completion judgment.",
+        "details": "Satisfies REQ-010. Shell out to task-master next, task-master show <id>, and task-master set-status --id=<id> --status=<status> through the subprocess wrapper from REQ-001, parsing their text output into structured objects for the loop. set-status must only be invoked by the loop after codex returns a task_complete verdict; the wrapper itself never decides completion. The wrapper is intentionally dumb integration glue, in line with the PRD's thin-orchestrator principle.",
+        "testStrategy": "Tests with recorded task-master outputs verify next/show parsing and set-status passthrough; a contract test asserts the wrapper exposes no completion-judging code path.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "task-master next wrapper",
+            "description": "Shell `task-master next` through REQ-001 and parse the output into a structured object.",
+            "details": "Satisfies REQ-010 for parent task 12. Invoke the hyphenated `task-master` binary (resolved via REQ-012) with `next`, then parse stdout into { id, title, description, dependencies }. Surface a clear empty-result shape when no task is on-deck. The wrapper never decides what to do next — the loop calls it.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit tests against recorded `task-master next` outputs assert parsed fields match and an empty-result case produces a clean null/empty shape.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "task-master show <id> wrapper",
+            "description": "Shell `task-master show <id>` and parse the detailed task into a structured object.",
+            "details": "Satisfies REQ-010 for parent task 12. Invoke `task-master show <id>` through REQ-001 and parse into { id, title, description, details, dependencies, testStrategy, status, subtasks }. The loop calls this to assemble REQ-008's bounded codex prompt with the current goal. No interpretation.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit tests against recorded `task-master show` outputs assert parsed fields match the JSON source of truth.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "task-master set-status passthrough",
+            "description": "Shell `task-master set-status --id=<id> --status=<status>` as a pure passthrough.",
+            "details": "Satisfies REQ-010 for parent task 12. Invoke `task-master set-status` through REQ-001 and return only the exit code and output. The wrapper itself must not encode any guard that infers whether the task is actually done — the loop calls it only after codex returns task_complete (REQ-008).",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test calls set-status with a fake id in a scratch tasks.json and asserts the status flip occurred with no extra wrapper logic in the call path.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Contract test: no completion judgment in wrapper",
+            "description": "Prove the wrapper exposes no completion-judging code path.",
+            "details": "Satisfies REQ-010 for parent task 12. Inspect the wrapper module surface; assert it exports only next, show, and setStatus with no internal helper that compares diff stats, test exit codes, or worker claims. This locks in the thin-orchestrator principle that completion is codex's call, never the trunk's.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "testStrategy": "Contract test snapshots the exported surface and grep-asserts no diff/status/test-related branching inside the module.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "13",
+        "title": "Worker bootstrap prompt",
+        "description": "Author a concise worker bootstrap prompt aligned with the PRD trunk and the configured test command.",
+        "details": "Satisfies REQ-015. The bootstrap states the worker's role, points to the task-master trunk, and names the test command to run when verifying changes. It deliberately avoids imposing a rigid output schema on the worker so Claude Code can use its native tool-use loop. Kept short to preserve the worker context budget for actual task work.",
+        "testStrategy": "Review checklist confirms role and test command are present and no rigid output schema is imposed; a smoke run shows the worker reads the bootstrap and proceeds without prompting for clarification.",
+        "priority": "medium",
+        "dependencies": [
+          "5"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Draft role and trunk-reference opening",
+            "description": "Write the bootstrap opening that names the worker's role and points at the task-master trunk.",
+            "details": "Satisfies REQ-015 for parent task 13. State the worker's role (implement the on-deck task from `task-master next`), reference the PRD trunk (parse-prd → expand-all → per-task implementation), and keep the opening short to preserve the worker context budget. The worker uses its native tool-use loop; the bootstrap is not a behavioral straitjacket.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Review checklist confirms role and trunk references are present and the opening is brief.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Name the configured test command",
+            "description": "Tell the worker which test command to run when verifying changes.",
+            "details": "Satisfies REQ-015 for parent task 13. Inject the config.testCommand from REQ-012 so the worker knows what to run before claiming completion. If unset, instruct the worker that no test command is configured and to verify by other means appropriate to the task. The bootstrap is the only place the worker learns the canonical test command.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Smoke run asserts the worker runs the configured test command at least once when verifying a code change.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Avoid imposing a rigid output schema",
+            "description": "Ensure the bootstrap does not impose a rigid output schema that would break the native tool-use loop.",
+            "details": "Satisfies REQ-015 for parent task 13. Explicitly omit any JSON-output or response-format constraints from the bootstrap. The worker is free to interleave thought, tool calls, and final text in its native style — codex reads the stream-json normalized turn, not a constrained worker schema. This preserves worker effectiveness.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Review checklist confirms no schema is imposed; a smoke run shows the worker uses tool calls freely without prompting for output format clarification.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "End-to-end smoke run",
+            "description": "Run a single worker turn with the bootstrap and confirm it proceeds without clarification.",
+            "details": "Satisfies REQ-015 for parent task 13. Compose subtasks 1–3 into the final bootstrap and run a turn against the REQ-003 runner. Assert the worker does not ask for the trunk command or the test command and produces actionable output. This is the prompt's acceptance gate.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "testStrategy": "Smoke run asserts the worker proceeds without clarification, runs at least one tool call, and produces a result event.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "14",
+        "title": "Per-turn transcript logging and secret redaction",
+        "description": "Write per-turn machine-readable artifacts plus a human-readable summary with token-shaped strings scrubbed.",
+        "details": "Satisfies REQ-013. For each turn persist worker stream, ground truth, evidence digest, codex prompt, and codex decision into a per-run directory and append a human-readable summary including memo evolution. Apply token-shape redaction (Anthropic and OpenAI key patterns, OAuth bearer-shaped strings) before any content reaches disk. Logging is a sink with no decision logic and may proceed in parallel with other foundation work since it has no upstream dependencies.",
+        "testStrategy": "Unit tests verify directory layout, JSONL appending of artifacts, summary readability, and that synthetic token-shaped strings are scrubbed everywhere they appear in inputs.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Per-run directory layout",
+            "description": "Define and create the per-run directory layout for all turn artifacts.",
+            "details": "Satisfies REQ-013 for parent task 14. Create runs/<timestamp>/turn-<n>/ with subfiles for worker_stream.jsonl, ground_truth.json, evidence_digest.json, codex_prompt.txt, codex_decision.json. Create lazily so a failed pre-run never leaves empty dirs. The layout is the contract REQ-008 logs against each turn.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test runs a fake turn and asserts the directory structure matches the contract exactly.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "JSONL writers for per-turn artifacts",
+            "description": "Implement append-only JSONL writers for the five per-turn artifacts.",
+            "details": "Satisfies REQ-013 for parent task 14. Append worker stream events as JSONL during the turn (so a crash mid-turn still leaves partial evidence); write ground truth, digest, prompt, and decision atomically at end-of-turn. The writers perform no decision logic — they are pure sinks.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit tests assert appended JSONL parses line-by-line and atomic writes never leave a half-file on disk on failure.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Human-readable summary with memo evolution",
+            "description": "Append a human-readable per-turn summary including memo evolution across turns.",
+            "details": "Satisfies REQ-013 for parent task 14. Per turn append a markdown summary block: turn index, verdict, message_to_claude (truncated), digest size, ground-truth highlights, and a diff between the prior memo and the new memo so the reader sees how codex's understanding evolves. The summary supports audit per User Story 4.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "testStrategy": "Review test asserts the summary contains the expected sections and the memo diff renders readably across a 3-turn fixture.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Token-shape redaction",
+            "description": "Scrub Anthropic/OpenAI key patterns and OAuth bearer-shaped strings before any write.",
+            "details": "Satisfies REQ-013 for parent task 14. Apply regex-based redaction for `sk-ant-…`, `sk-…`, and Bearer-token-shaped strings before content reaches disk anywhere — JSONL events, summary, prompts, decisions. Redact in-place with a `[REDACTED]` marker. Apply to inputs from every source (worker stream, codex prompt, ground truth) because tokens can leak from any of them.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3
+            ],
+            "testStrategy": "Unit tests inject synthetic token-shape strings across each artifact source and assert no token survives to disk.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "15",
+        "title": "Per-turn control loop with no deviation taxonomy",
+        "description": "Wire the per-turn control loop that runs a worker turn, collects ground truth, builds the digest, calls codex, persists the memo, and routes the verdict.",
+        "details": "Satisfies REQ-008. Per task: fetch the on-deck task via the trunk (REQ-010), run one worker turn (REQ-003), collect ground truth (REQ-004), build the digest (REQ-005), call codex (REQ-006), persist updated_memo (REQ-009), and route via the verdict switch (REQ-007). Repeat until task_complete, then advance to the next task. The only loop-side branches permitted are turn-completion detection, the verdict switch, and numeric safety guards that escalate to a human — no deviation taxonomy may live in the loop.",
+        "testStrategy": "Integration test across at least three sequential tasks on a scratch PRD confirms no human input on non-escalation turns, that task_complete advances the trunk via set-status, and that abort halts and records the reason.",
+        "priority": "high",
+        "dependencies": [
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "12"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Trunk-next to worker-turn wiring",
+            "description": "Wire the trunk wrapper to fetch the on-deck task and feed it into the worker turn.",
+            "details": "Satisfies REQ-008 for parent task 15. Call REQ-010's next + show to get the current goal; pass it into the REQ-008 prompt-assembly that REQ-006 will consume; launch the REQ-003 worker turn with the appropriate session id. The wiring exposes the loop's first integration seam. No deviation taxonomy lives here — just plumbing.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Integration test against a scratch tasks.json asserts the loop advances to the right on-deck task and a worker turn is launched with the goal in scope.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Ground-truth + digest + codex composition",
+            "description": "After the worker turn, compose ground truth, evidence digest, and codex call in sequence.",
+            "details": "Satisfies REQ-008 for parent task 15. Sequence REQ-004 ground truth, REQ-005 digest assembly, and REQ-006 codex invocation per turn so the digest reaches codex bounded and structured. No interpretation of any field happens in this step — it is pure orchestration. Errors at any step short-circuit into REQ-018 backoff and ultimately REQ-011 escalation.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Integration test asserts the three steps run in order each turn and the codex prompt receives the digest produced by REQ-005.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Memo persistence and verdict routing",
+            "description": "Persist updated_memo and route the verdict via the REQ-007 switch.",
+            "details": "Satisfies REQ-008 for parent task 15. After codex returns, write updated_memo via REQ-009 and call the REQ-007 router with the decision. The router returns a tagged action; the loop executes it (relay message_to_claude to the worker, advance to next task, etc.). Memo persistence happens regardless of verdict so escalations also carry forward.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "Integration test asserts memo is persisted on every turn and the verdict drives the next loop iteration through the router's action.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "task_complete advance and abort halt",
+            "description": "On task_complete advance the trunk via set-status and fetch the next task; on abort halt and record.",
+            "details": "Satisfies REQ-008 for parent task 15. task_complete calls REQ-010 set-status=done and re-enters subtask 1 for the next task. abort exits the loop cleanly, records the verdict in the transcript via REQ-013, and surfaces a non-zero exit. The loop never auto-decides completion — codex does, and the loop only executes.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "testStrategy": "Integration test across three sequential tasks asserts task_complete advances the trunk and a synthetic abort halts the run with the recorded reason.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Numeric safety branch hooks",
+            "description": "Expose seams where REQ-016 non-progress guard and REQ-018 backoff plug in as numeric safety guards.",
+            "details": "Satisfies REQ-008 for parent task 15. Add a tiny pre-turn hook that lets REQ-016 inspect change history and a post-failure hook that lets REQ-018 classify and back off. These are the only loop-side branches permitted beyond turn-completion detection and the verdict switch — no deviation taxonomy may live in the loop itself.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "testStrategy": "Contract test asserts only three branch families exist in the loop (turn-completion, verdict switch, numeric safety) and any new branch fails the contract.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "16",
+        "title": "Escalation channel with console prompt and answer routing",
+        "description": "Pause the run on an escalate verdict, present codex's question on the console, capture the typed answer, and route it back to codex.",
+        "details": "Satisfies REQ-011. On an escalate verdict from the router, pause the loop and print codex's escalation_question in a delimited console block. Block on typed input from the human, return the answer to the loop which routes it back into the next codex prompt rather than directly into the worker — preserving codex as the sole decider. Record question and answer in the per-turn transcript. Optionally fire a desktop notification, degrading silently to console-only when unavailable.",
+        "testStrategy": "Integration test simulates an escalation verdict, asserts the loop pauses until input is supplied, verifies the answer is fed to codex (not the worker) on the resumed turn, and confirms the exchange is recorded.",
+        "priority": "high",
+        "dependencies": [
+          "15"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Console pause and delimited question print",
+            "description": "Pause the loop on escalate and print codex's escalation_question in a delimited console block.",
+            "details": "Satisfies REQ-011 for parent task 16. When the router returns the escalate tagged action, halt the loop's progress, print a delimited block (clear top/bottom rules) containing codex's escalation_question and the escalation_category for context. Make the prompt unmistakable in a long log stream so the user does not miss it. No worker turn occurs while paused.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Integration test triggers an escalation verdict and asserts the loop pauses and the delimited block appears with the question text.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Blocking input capture",
+            "description": "Block on typed input from the human and return the answer to the loop.",
+            "details": "Satisfies REQ-011 for parent task 16. Read from stdin synchronously (or via readline interface) until the human submits an answer; trim trailing newline; return the raw string to the caller. No timeout — the loop intentionally yields fully to the human here. Empty input is permitted; codex will decide how to handle it on the next turn.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Integration test feeds a piped answer to stdin and asserts the captured string matches exactly.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Route answer back through codex (not worker)",
+            "description": "Inject the human's answer into the next codex prompt rather than directly to the worker.",
+            "details": "Satisfies REQ-011 for parent task 16. The next loop iteration assembles a codex prompt that includes the human answer as a designated section under a fixed delimiter, so codex remains the sole decider. Never relay the answer to the worker. This preserves the design invariant from User Story 3.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "Integration test asserts the next codex prompt contains the answer in the designated section and the worker never receives the answer text.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Transcript recording of question and answer",
+            "description": "Record the escalation question and the human answer in the per-turn transcript.",
+            "details": "Satisfies REQ-011 for parent task 16. Append both fields to REQ-013's per-turn artifact for the turn where the escalation fired and the turn that resumed with the answer. This makes the audit trail complete per User Story 4 acceptance criteria. Apply REQ-013's redaction to both fields.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "testStrategy": "Integration test asserts the recorded transcript contains both fields under the right turns with token-shape redaction applied.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Optional desktop notification with fallback",
+            "description": "Fire a desktop notification on escalation, degrading silently to console-only when unavailable.",
+            "details": "Satisfies REQ-011 for parent task 16. Use node-notifier (optional dep) to fire a one-line notification when escalation triggers, so the user can step away during a long run. Wrap in try/catch so notifier failures (missing dep, headless env) degrade silently to console-only. Do not block the loop on notifier outcome.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test asserts the notifier path is invoked and a failure in the notifier does not affect the pause/capture/resume sequence.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "17",
+        "title": "Non-progress safety guard",
+        "description": "Track consecutive no-change turns and escalate to a human at a configurable threshold without judging correctness.",
+        "details": "Satisfies REQ-016. Maintain a mechanical counter that increments only on turns with an empty changed-file list and unchanged test exit code, and resets on any change. At the configured threshold (default 3) invoke the escalation channel (REQ-011) and take no other action — never auto-abort, never judge correctness. Lives inside the loop's allowed numeric safety branches per REQ-008.",
+        "testStrategy": "Unit tests verify counter increments only on no-change turns, resets correctly on change, and that hitting the threshold triggers escalation exactly once with no other side effects.",
+        "priority": "medium",
+        "dependencies": [
+          "15",
+          "16"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Mechanical no-change counter",
+            "description": "Maintain a counter that increments only on turns with empty changed-file list and unchanged test exit code.",
+            "details": "Satisfies REQ-016 for parent task 17. After each turn, inspect the REQ-004 ground truth: if changed_files is empty AND test_exit_code is unchanged from the prior turn, increment the counter. Otherwise, leave it for the reset step. The guard reads only ground-truth fields, never interprets claims, and never judges correctness.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit test feeds two no-change turns in a row and asserts the counter reaches 2.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Counter reset on any change",
+            "description": "Reset the counter on any turn with a non-empty changed-file list or changed test exit code.",
+            "details": "Satisfies REQ-016 for parent task 17. The reset is mechanical and unconditional whenever progress is observed in ground truth. This prevents the threshold from accumulating across genuine progress patches separated by no-change turns. Pair with subtask 1's increment logic into a single update function.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test feeds no-change → change → no-change and asserts the counter is 1 at the end, not 2.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Threshold escalate via REQ-011",
+            "description": "At the configured threshold escalate through the REQ-011 channel and take no other action.",
+            "details": "Satisfies REQ-016 for parent task 17. When the counter reaches the configured threshold (default 3) trigger REQ-011's escalation channel with a question synthesized by the guard (e.g., \"3 consecutive turns made no changes — continue, abort, or redirect?\") and route the answer back to codex like any other escalation. Never auto-abort, never judge correctness.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "testStrategy": "Integration test pushes the counter to the threshold and asserts escalation fires exactly once with no other side effects.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Guard regression tests",
+            "description": "Author the regression suite covering increment, reset, and threshold behaviors.",
+            "details": "Satisfies REQ-016 for parent task 17. Cases: increment on no-change, reset on change, single escalation fire at threshold, no double-fire across consecutive overcap turns. Locks in the design that the guard is a pure numeric safety branch per REQ-008.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "testStrategy": "Run the suite; gate task 17 on all four behaviors passing.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "18",
+        "title": "Rate-limit and transient-failure backoff",
+        "description": "Detect rate-limit and auth-refresh failures from either agent, retry once on auth refresh, apply capped exponential backoff for rate limits, and escalate after repeated failures.",
+        "details": "Satisfies REQ-017. Classify failure signatures from the Claude Code runner (REQ-003) and codex invocation (REQ-006). On auth-refresh failure retry the same turn exactly once with no API-key injection, relying on each agent's own token refresh. On rate-limit responses apply capped exponential backoff. Past a configured failure cap escalate via REQ-011 rather than spinning indefinitely.",
+        "testStrategy": "Unit tests inject simulated auth-refresh and rate-limit failures and verify single retry on auth, capped exponential backoff scheduling on rate limits, and escalation triggered past the failure cap.",
+        "priority": "medium",
+        "dependencies": [
+          "5",
+          "8"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Failure signature classifier",
+            "description": "Classify failure signatures from both the worker (REQ-003) and the supervisor (REQ-006).",
+            "details": "Satisfies REQ-017 for parent task 18. Inspect exit codes, stderr fragments, and result-event errors to bucket failures into { auth_refresh, rate_limit, other }. Auth-refresh signatures include OAuth token-renewal messages from claude or codex; rate-limit signatures match 429-style responses. The classifier is the single source of truth used by both retry paths.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Unit tests inject simulated stderr fragments for each bucket and assert the classifier returns the correct label.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Auth-refresh single retry",
+            "description": "On an auth-refresh failure retry the same turn exactly once with no API-key injection.",
+            "details": "Satisfies REQ-017 for parent task 18. Re-invoke the same turn (worker via REQ-003 or supervisor via REQ-006) once, relying on the agent's own subscription token refresh — never inject an API key into the env (REQ-012 sanitization stays intact). If the second attempt fails the failure cap path takes over via subtask 4.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test simulates one auth-refresh failure and asserts exactly one retry occurred with sanitized env still in effect.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Capped exponential backoff for rate limits",
+            "description": "Apply capped exponential backoff on rate-limit responses.",
+            "details": "Satisfies REQ-017 for parent task 18. Schedule retries with delays doubling from a base (e.g., 5s → 10s → 20s) up to a configured cap (e.g., 5 minutes). Honor any Retry-After header value when present by clamping to it. Log each backoff scheduling so the audit shows why the loop is paused.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Unit test simulates repeated rate-limit failures and asserts the backoff schedule doubles up to the cap and respects Retry-After.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Escalate past failure cap",
+            "description": "After a configured number of failures escalate via REQ-011 rather than spinning indefinitely.",
+            "details": "Satisfies REQ-017 for parent task 18. Track total transient failures per turn; past the cap (default 5) call the REQ-011 escalation channel with a synthesized question summarizing the failure pattern and let the human decide continue/abort/redirect through codex. This guarantees the loop never silently churns forever.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3
+            ],
+            "testStrategy": "Integration test pushes past the failure cap and asserts escalation fires with the failure summary; no further retries occur.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "19",
+        "title": "End-to-end milestone run with injected-fake and escalation drills",
+        "description": "Execute the v1 closed-loop milestone run on a scratch PRD with verification drills covering injected false-done detection and escalation round-trip.",
+        "details": "Closes Phase 5 and verifies all P0/P1 requirements together. Run the loop across at least three tasks on a throwaway PRD in a scratch repository. Perform the injected false-done drill: cause the worker to claim completion with no diff or failing tests and assert codex returns fake_done_flag true with cited evidence (REQ-005, REQ-006) and the loop does not mark the task done (REQ-008). Perform the escalation round-trip drill exercising REQ-011 and REQ-014. Confirm subscription-auth probe success (REQ-012, REQ-019), zero API-billed calls on provider dashboards, and a complete per-turn transcript on disk (REQ-013).",
+        "testStrategy": "Run the scripted milestone scenario end-to-end; gate on (a) injected false-done caught with fake_done_flag and cited evidence and task not marked done, (b) escalation pauses and routes answer back to codex, (c) provider dashboards show 0 API calls, (d) complete per-turn transcript exists for every turn.",
+        "priority": "high",
+        "dependencies": [
+          "16",
+          "17",
+          "18"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Scratch PRD and repo setup",
+            "description": "Prepare a throwaway PRD and a scratch git repository for the milestone run.",
+            "details": "Closes Phase 5 and verifies all P0/P1 requirements for parent task 19. Author a small PRD covering at least three implementable tasks; init a scratch git repo (separate from this project); parse-prd via the REQ-019 verified script. Confirm subscription-auth probe success (REQ-012, REQ-019) before the run begins. The scratch context isolates the run from the production repo.",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Setup script produces a scratch repo with a parsed tasks.json containing ≥3 pending tasks and a passing subscription-auth probe.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Run loop across three sequential tasks",
+            "description": "Execute the closed-loop run across at least three tasks with human input only on escalations.",
+            "details": "Closes Phase 5 for parent task 19. Drive REQ-008's loop across the scratch tasks; verify the loop advances on task_complete via REQ-010 set-status; record per-turn transcripts via REQ-013. Confirm no human input on non-escalation turns per User Story 1. The run exercises every Phase 1–4 module end-to-end.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Run gates on (a) ≥3 tasks reaching task_complete, (b) zero human prompts outside escalations, (c) transcripts on disk for every turn.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Injected false-done drill",
+            "description": "Cause the worker to claim completion with no diff or failing tests and assert codex catches it.",
+            "details": "Closes Phase 5 for parent task 19. Inject a prompt that nudges the worker to claim done without changing files (or while tests fail); assert codex returns fake_done_flag=true with at least one cited evidence item from REQ-005 facts and the loop does not mark the task done (REQ-008). This is the headline acceptance gate from Goal 2.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "Drill asserts fake_done_flag=true, ≥1 cited_evidence item, and task status is NOT set to done by REQ-010.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Escalation round-trip drill",
+            "description": "Exercise the REQ-011 escalation channel with a whitelisted high-stakes prompt.",
+            "details": "Closes Phase 5 for parent task 19. Craft a prompt that triggers a category in the REQ-014 escalation whitelist (e.g., an irreversible operation); assert the loop pauses, the question reaches the console, the typed answer routes back to codex (not the worker), and the run resumes with codex's re-decision. Confirm transcript records both halves.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "Drill asserts loop pause, answer routed into next codex prompt (not worker prompt), and transcript contains question+answer pair.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Zero-API-call and complete-transcript audit",
+            "description": "Verify provider dashboards show 0 API calls and a complete per-turn transcript exists.",
+            "details": "Closes Phase 5 for parent task 19. After the run check Anthropic and OpenAI dashboards for the run window and confirm zero API-billed calls (subscription auth held end-to-end per REQ-012 and REQ-019). Walk the per-run directory from REQ-013 and confirm every turn has all five artifacts plus the human-readable summary. This is the final acceptance gate for v1.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "testStrategy": "Audit gates on (a) 0 API calls on both provider dashboards in the run window, (b) every turn has worker_stream.jsonl, ground_truth.json, evidence_digest.json, codex_prompt.txt, codex_decision.json, and a summary section.",
+            "parentId": "undefined"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2026-05-30T03:14:50.981Z",
+      "taskCount": 19,
+      "completedCount": 1,
+      "tags": [
+        "master"
+      ]
+    }
+  }
+}
