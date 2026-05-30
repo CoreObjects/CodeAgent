@@ -6,6 +6,7 @@ import {
   DEFAULT_CONFIG,
   resolveBinary,
   resolveAllBinaries,
+  pickArchExe,
   buildClaudeProbeArgs,
   buildCodexProbeArgs,
   runStartupProbe,
@@ -121,6 +122,33 @@ test('resolveAllBinaries honors explicit overrides without consulting the lookup
   const r = await resolveAllBinaries(cfg, fakeRun);
   assert.deepEqual(r, { claude: 'A/claude', codex: 'B/codex.exe', taskMaster: 'C/task-master.cmd' });
   assert.equal(called, false, 'lookup must not run when all overrides are set');
+});
+
+// --- codex/claude .exe upgrade (latency fix) ------------------------------
+
+test('pickArchExe selects the x86_64 windows build on win32/x64', () => {
+  const paths = [
+    '/p/codex-win32-arm64/vendor/aarch64-pc-windows-msvc/bin/codex.exe',
+    '/p/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe',
+  ];
+  assert.equal(pickArchExe(paths, 'win32', 'x64'), paths[1]);
+});
+
+test('pickArchExe selects the aarch64 build on win32/arm64', () => {
+  const paths = [
+    '/p/vendor/x86_64-pc-windows-msvc/bin/codex.exe',
+    '/p/vendor/aarch64-pc-windows-msvc/bin/codex.exe',
+  ];
+  assert.equal(pickArchExe(paths, 'win32', 'arm64'), paths[1]);
+});
+
+test('pickArchExe returns null for an empty list', () => {
+  assert.equal(pickArchExe([], 'win32', 'x64'), null);
+});
+
+test('pickArchExe falls back to the first path when no arch token matches', () => {
+  const paths = ['/p/bin/codex.exe', '/p/other/codex.exe'];
+  assert.equal(pickArchExe(paths, 'win32', 'x64'), paths[0]);
 });
 
 // --- 3.4 startup probe ----------------------------------------------------
