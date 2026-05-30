@@ -435,67 +435,73 @@
           "5",
           "6"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Claims block extraction",
             "description": "Build the claims block from the normalized worker turn.",
             "details": "Satisfies REQ-005 for parent task 7. Map the REQ-003 normalized turn into a claims block containing final worker text, stop reason, result subtype, tool-use count, and actions_taken (per-call tool name and error flag). Keep the block separate from facts so codex can see divergence by direct comparison. No interpretation occurs here.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test feeds a fixture turn and asserts the claims block contains exactly the expected fields with values matching the input.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:32:17.668Z"
           },
           {
             "id": 2,
             "title": "Facts block from ground truth",
             "description": "Build the facts block from REQ-004 ground-truth output.",
             "details": "Satisfies REQ-005 for parent task 7. Map ground truth into a facts block: HEAD before/after, diff stats, changed-file list, porcelain status, test exit code, and tail. Mirror the names in the schema so codex's prompt can reference them precisely. The facts block must remain a distinct top-level field — never merged with claims.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test feeds a fixture ground truth and asserts the facts block contains the seven expected fields with values matching the input.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:32:17.678Z"
           },
           {
             "id": 3,
             "title": "Bounding: caps, overflow sentinels, test tail",
             "description": "Hard-cap free-text fields, cap arrays with overflow sentinels, and retain only the tail of test output.",
             "details": "Satisfies REQ-005 for parent task 7. Truncate every string field at a fixed character cap, replace overflow array tails with a sentinel like `…+N more`, and keep only the last N bytes of test output. The caps must compose so the total serialized digest is at most 6000 characters. Compaction is mechanical and identical across runs.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2
             ],
             "testStrategy": "Unit tests assert overlong strings are truncated, overlong arrays carry the sentinel, and the total serialized size never exceeds 6000 characters.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:32:17.684Z"
           },
           {
             "id": 4,
             "title": "Divergence hints emitter (data only)",
             "description": "Emit mechanical divergence hints as data, with no code path acting on them to alter routing.",
             "details": "Satisfies REQ-005 for parent task 7. Compute claimed-done-but-no-diff, tests-referenced-but-not-run, and tool-errors-present flags from claims and facts; surface them as a divergence_hints field. The orchestrator must never read these flags to influence the verdict — they exist only so codex can spot patterns. Enforce this design constraint with a contract test.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
             "testStrategy": "Unit tests assert each flag fires under the right input pattern; a contract test asserts no caller reads divergence_hints outside the digest builder itself.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:32:17.689Z"
           },
           {
             "id": 5,
             "title": "Digest serializer with 6000-char total cap",
             "description": "Serialize the assembled digest and enforce the 6000-character total cap.",
             "details": "Satisfies REQ-005 for parent task 7. Serialize the {claims, actions_taken, facts, divergence_hints} object to JSON; if serialization exceeds 6000 characters, re-run bounding with tighter sub-caps until it fits. Return both the JSON string and the byte count so REQ-013 can log size per turn. Refuse to ship an over-cap digest to codex.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3,
               4
             ],
             "testStrategy": "Unit tests cap-stuff each field and assert the serializer returns a string at most 6000 chars with all four sections preserved.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:32:17.695Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T04:32:17.695Z"
       },
       {
         "id": "8",
@@ -1298,9 +1304,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T04:29:59.833Z",
+      "lastModified": "2026-05-30T04:32:17.695Z",
       "taskCount": 19,
-      "completedCount": 6,
+      "completedCount": 7,
       "tags": [
         "master"
       ]
