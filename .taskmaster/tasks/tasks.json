@@ -802,53 +802,58 @@
         "dependencies": [
           "1"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "task-master next wrapper",
             "description": "Shell `task-master next` through REQ-001 and parse the output into a structured object.",
             "details": "Satisfies REQ-010 for parent task 12. Invoke the hyphenated `task-master` binary (resolved via REQ-012) with `next`, then parse stdout into { id, title, description, dependencies }. Surface a clear empty-result shape when no task is on-deck. The wrapper never decides what to do next — the loop calls it.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit tests against recorded `task-master next` outputs assert parsed fields match and an empty-result case produces a clean null/empty shape.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.196Z"
           },
           {
             "id": 2,
             "title": "task-master show <id> wrapper",
             "description": "Shell `task-master show <id>` and parse the detailed task into a structured object.",
             "details": "Satisfies REQ-010 for parent task 12. Invoke `task-master show <id>` through REQ-001 and parse into { id, title, description, details, dependencies, testStrategy, status, subtasks }. The loop calls this to assemble REQ-008's bounded codex prompt with the current goal. No interpretation.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit tests against recorded `task-master show` outputs assert parsed fields match the JSON source of truth.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.209Z"
           },
           {
             "id": 3,
             "title": "task-master set-status passthrough",
             "description": "Shell `task-master set-status --id=<id> --status=<status>` as a pure passthrough.",
             "details": "Satisfies REQ-010 for parent task 12. Invoke `task-master set-status` through REQ-001 and return only the exit code and output. The wrapper itself must not encode any guard that infers whether the task is actually done — the loop calls it only after codex returns task_complete (REQ-008).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test calls set-status with a fake id in a scratch tasks.json and asserts the status flip occurred with no extra wrapper logic in the call path.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.216Z"
           },
           {
             "id": 4,
             "title": "Contract test: no completion judgment in wrapper",
             "description": "Prove the wrapper exposes no completion-judging code path.",
             "details": "Satisfies REQ-010 for parent task 12. Inspect the wrapper module surface; assert it exports only next, show, and setStatus with no internal helper that compares diff stats, test exit codes, or worker claims. This locks in the thin-orchestrator principle that completion is codex's call, never the trunk's.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2,
               3
             ],
             "testStrategy": "Contract test snapshots the exported surface and grep-asserts no diff/status/test-related branching inside the module.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.223Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T06:06:50.223Z"
       },
       {
         "id": "13",
@@ -860,57 +865,62 @@
         "dependencies": [
           "5"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Draft role and trunk-reference opening",
             "description": "Write the bootstrap opening that names the worker's role and points at the task-master trunk.",
             "details": "Satisfies REQ-015 for parent task 13. State the worker's role (implement the on-deck task from `task-master next`), reference the PRD trunk (parse-prd → expand-all → per-task implementation), and keep the opening short to preserve the worker context budget. The worker uses its native tool-use loop; the bootstrap is not a behavioral straitjacket.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Review checklist confirms role and trunk references are present and the opening is brief.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.236Z"
           },
           {
             "id": 2,
             "title": "Name the configured test command",
             "description": "Tell the worker which test command to run when verifying changes.",
             "details": "Satisfies REQ-015 for parent task 13. Inject the config.testCommand from REQ-012 so the worker knows what to run before claiming completion. If unset, instruct the worker that no test command is configured and to verify by other means appropriate to the task. The bootstrap is the only place the worker learns the canonical test command.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Smoke run asserts the worker runs the configured test command at least once when verifying a code change.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.248Z"
           },
           {
             "id": 3,
             "title": "Avoid imposing a rigid output schema",
             "description": "Ensure the bootstrap does not impose a rigid output schema that would break the native tool-use loop.",
             "details": "Satisfies REQ-015 for parent task 13. Explicitly omit any JSON-output or response-format constraints from the bootstrap. The worker is free to interleave thought, tool calls, and final text in its native style — codex reads the stream-json normalized turn, not a constrained worker schema. This preserves worker effectiveness.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Review checklist confirms no schema is imposed; a smoke run shows the worker uses tool calls freely without prompting for output format clarification.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.258Z"
           },
           {
             "id": 4,
             "title": "End-to-end smoke run",
             "description": "Run a single worker turn with the bootstrap and confirm it proceeds without clarification.",
             "details": "Satisfies REQ-015 for parent task 13. Compose subtasks 1–3 into the final bootstrap and run a turn against the REQ-003 runner. Assert the worker does not ask for the trunk command or the test command and produces actionable output. This is the prompt's acceptance gate.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2,
               3
             ],
             "testStrategy": "Smoke run asserts the worker proceeds without clarification, runs at least one tool call, and produces a result event.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.268Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T06:06:50.268Z"
       },
       {
         "id": "14",
@@ -920,57 +930,62 @@
         "testStrategy": "Unit tests verify directory layout, JSONL appending of artifacts, summary readability, and that synthetic token-shaped strings are scrubbed everywhere they appear in inputs.",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Per-run directory layout",
             "description": "Define and create the per-run directory layout for all turn artifacts.",
             "details": "Satisfies REQ-013 for parent task 14. Create runs/<timestamp>/turn-<n>/ with subfiles for worker_stream.jsonl, ground_truth.json, evidence_digest.json, codex_prompt.txt, codex_decision.json. Create lazily so a failed pre-run never leaves empty dirs. The layout is the contract REQ-008 logs against each turn.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test runs a fake turn and asserts the directory structure matches the contract exactly.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.278Z"
           },
           {
             "id": 2,
             "title": "JSONL writers for per-turn artifacts",
             "description": "Implement append-only JSONL writers for the five per-turn artifacts.",
             "details": "Satisfies REQ-013 for parent task 14. Append worker stream events as JSONL during the turn (so a crash mid-turn still leaves partial evidence); write ground truth, digest, prompt, and decision atomically at end-of-turn. The writers perform no decision logic — they are pure sinks.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit tests assert appended JSONL parses line-by-line and atomic writes never leave a half-file on disk on failure.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.286Z"
           },
           {
             "id": 3,
             "title": "Human-readable summary with memo evolution",
             "description": "Append a human-readable per-turn summary including memo evolution across turns.",
             "details": "Satisfies REQ-013 for parent task 14. Per turn append a markdown summary block: turn index, verdict, message_to_claude (truncated), digest size, ground-truth highlights, and a diff between the prior memo and the new memo so the reader sees how codex's understanding evolves. The summary supports audit per User Story 4.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2
             ],
             "testStrategy": "Review test asserts the summary contains the expected sections and the memo diff renders readably across a 3-turn fixture.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.294Z"
           },
           {
             "id": 4,
             "title": "Token-shape redaction",
             "description": "Scrub Anthropic/OpenAI key patterns and OAuth bearer-shaped strings before any write.",
             "details": "Satisfies REQ-013 for parent task 14. Apply regex-based redaction for `sk-ant-…`, `sk-…`, and Bearer-token-shaped strings before content reaches disk anywhere — JSONL events, summary, prompts, decisions. Redact in-place with a `[REDACTED]` marker. Apply to inputs from every source (worker stream, codex prompt, ground truth) because tokens can leak from any of them.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2,
               3
             ],
             "testStrategy": "Unit tests inject synthetic token-shape strings across each artifact source and assert no token survives to disk.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:06:50.303Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T06:06:50.303Z"
       },
       {
         "id": "15",
@@ -1326,9 +1341,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T04:47:21.283Z",
+      "lastModified": "2026-05-30T06:06:50.303Z",
       "taskCount": 19,
-      "completedCount": 11,
+      "completedCount": 14,
       "tags": [
         "master"
       ]

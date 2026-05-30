@@ -1,0 +1,26 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { buildWorkerBootstrap } from '../src/worker-bootstrap.js';
+
+// REQ-015: worker bootstrap prompt — role + trunk reference + test command,
+// WITHOUT imposing a rigid output schema (Claude Code keeps its native tool loop).
+
+test('states the worker role and references the task-master trunk', () => {
+  const p = buildWorkerBootstrap({ testCommand: ['npm', 'test'] });
+  assert.match(p, /implement/i);
+  assert.match(p, /task-master/);
+});
+
+test('names the configured test command', () => {
+  assert.match(buildWorkerBootstrap({ testCommand: ['node', '--test'] }), /node --test/);
+});
+
+test('omits the test sentence when no test command is configured', () => {
+  const p = buildWorkerBootstrap({ testCommand: null });
+  assert.doesNotMatch(p, /test command/i);
+});
+
+test('does not impose a rigid output schema (no output-format / json-schema constraint)', () => {
+  const p = buildWorkerBootstrap({ testCommand: ['npm', 'test'] });
+  assert.doesNotMatch(p, /output-format|respond with json|json schema|response format/i);
+});
