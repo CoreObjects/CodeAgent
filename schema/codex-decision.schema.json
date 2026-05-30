@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Codex supervisor decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assessment", "verdict", "cited_evidence", "updated_memo"],
+  "properties": {
+    "assessment": {
+      "type": "string",
+      "description": "1-4 sentences: what the worker actually did this turn vs what was asked."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["continue", "redirect", "task_complete", "escalate", "abort"]
+    },
+    "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+    "message_to_claude": {
+      "type": "string",
+      "description": "Exact next instruction relayed verbatim to the worker. Required for continue/redirect."
+    },
+    "escalation_question": {
+      "type": "string",
+      "description": "Required iff verdict==escalate: precise question + options/tradeoffs for the human."
+    },
+    "escalation_category": {
+      "type": "string",
+      "enum": ["irreversible", "money", "security_privacy_legal", "scope_product", "judgment_human_would_want", "none"]
+    },
+    "cited_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ground-truth facts justifying the verdict. Forces evidence, not vibes.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "observation"],
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": ["git_diff", "git_status", "test_exit_code", "test_output", "tool_use", "tool_result", "claude_claim", "task_requirement"]
+          },
+          "observation": { "type": "string" },
+          "supports": { "type": "string", "enum": ["verdict", "contradiction"] }
+        }
+      }
+    },
+    "fake_done_flag": {
+      "type": "boolean",
+      "description": "True if the worker implied completion but ground truth contradicts it."
+    },
+    "updated_memo": {
+      "type": "string",
+      "description": "Codex's full rolling memo for next turn (bounded)."
+    }
+  }
+}

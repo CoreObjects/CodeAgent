@@ -514,67 +514,73 @@
           "7",
           "3"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "codex exec argument builder",
             "description": "Build the codex exec argv with sandbox, approval policy, schema, and output-last-message files.",
             "details": "Satisfies REQ-006 for parent task 8. Assemble argv: `codex exec --sandbox read-only -c approval_policy=\"never\" --output-schema <schema.json> --output-last-message <out.json>` so the supervisor cannot modify files and writes its decision to a deterministic location. Resolved binary path comes from REQ-012; sanitized env is applied via the REQ-001 wrapper. Never inject an API key. Include --json and --skip-git-repo-check in the argv, and PIPE the evidence digest to codex stdin (stdin must reach EOF — an open stdin stalls codex indefinitely).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test asserts the argv always contains sandbox read-only and approval_policy never, and points at the configured schema and output files.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:39:01.904Z"
           },
           {
             "id": 2,
             "title": "Bounded prompt assembly (role + goal + memo + digest)",
             "description": "Construct the bounded codex prompt from role, current goal, rolling memo, and this-turn evidence digest.",
             "details": "Satisfies REQ-006 for parent task 8. Assemble exactly four sections under fixed delimiters: role (from REQ-014 system prompt), current goal (from REQ-010 task), rolling memo (verbatim from REQ-009), and this-turn evidence digest (from REQ-005). Never include a growing transcript. Bound on assembly so the prompt size stays predictable.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test asserts the prompt contains the four delimited sections in order and excludes any prior-turn transcript content.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:39:01.911Z"
           },
           {
             "id": 3,
             "title": "Decision file read + schema validation",
             "description": "Read the output-last-message file and validate the parsed decision against the JSON schema.",
             "details": "Satisfies REQ-006 for parent task 8. After codex exits, read the output file, JSON.parse it, and validate against the schema (assessment, verdict enum, cited_evidence with minItems 1, updated_memo, optional message_to_claude/escalation_question/category/fake_done_flag). Reject any decision lacking at least one cited evidence item. Validation is local — use ajv or equivalent.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
             "testStrategy": "Unit tests cover a schema-valid happy path and a decision missing cited_evidence (rejected).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:39:01.917Z"
           },
           {
             "id": 4,
             "title": "Malformed-decision single re-ask then escalate",
             "description": "On malformed output, re-ask exactly once before producing an escalate outcome.",
             "details": "Satisfies REQ-006 for parent task 8. If parse or validation fails, build a second prompt that includes the original prompt plus a short re-ask instruction and invoke codex once more. If the second attempt also fails, produce an escalate decision synthesized by the orchestrator (the only place this is allowed) rather than guessing a verdict. Record both attempts.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
             "testStrategy": "Unit test simulates two malformed responses and asserts exactly one retry occurred and the outcome is escalate, not a guessed verdict.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:39:01.922Z"
           },
           {
             "id": 5,
             "title": "Sandbox file-write drill",
             "description": "Verify codex cannot modify files at the process level under sandbox read-only.",
             "details": "Satisfies REQ-006 for parent task 8. Craft a probe prompt instructing codex to write a file; assert the attempt fails at the sandbox boundary and the decision file is the only output. This validates that the sandbox flag actually constrains the supervisor and that the design invariant (codex never edits code) is enforced by the OS, not by trust.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Integration drill prompts codex to write /tmp/probe; assert the file does not appear and codex returns a decision noting the constraint.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T04:39:01.927Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T04:39:01.927Z"
       },
       {
         "id": "9",
@@ -1304,9 +1310,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T04:32:17.695Z",
+      "lastModified": "2026-05-30T04:39:01.927Z",
       "taskCount": 19,
-      "completedCount": 7,
+      "completedCount": 8,
       "tags": [
         "master"
       ]
