@@ -154,56 +154,61 @@
         "dependencies": [
           "1"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Config schema and loader",
             "description": "Define and load the orchestrator's configuration object with validation.",
             "details": "Satisfies REQ-012 for parent task 3. Define a config schema covering binary paths (claude, codex, task-master), per-call timeouts, memo cap, digest cap, test command, log directory, and permission posture. Load from a single config file; reject unknown keys to catch typos early. Fail with a clear message on validation error rather than running with defaults that mask misconfiguration.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit tests load a valid config, a missing-key config (default fill), and an unknown-key config (rejection) and assert behavior.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:40:07.288Z"
           },
           {
             "id": 2,
             "title": "Binary path resolution",
             "description": "Resolve absolute paths for claude, codex, and task-master, failing immediately when missing.",
             "details": "Satisfies REQ-012 for parent task 3. Use which/where lookups plus explicit config overrides to resolve the three binaries to absolute paths before any run. If any is missing, fail immediately with a clear message naming the binary and the lookup attempted. The resolved paths feed every call site through the REQ-001 wrapper.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test simulates a missing binary and asserts a clear failure naming which binary is missing; positive test asserts absolute paths are returned.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:40:07.297Z"
           },
           {
             "id": 3,
             "title": "Env sanitization stripping *_API_KEY",
             "description": "Build the child-process env by stripping every variable matching *_API_KEY.",
             "details": "Satisfies REQ-012 for parent task 3. Filter process.env removing ANTHROPIC_API_KEY, OPENAI_API_KEY, and any variable whose name ends with _API_KEY so subscription auth is enforced at the process boundary. Preserve PATH, PYTHONUTF8, and other non-key variables. Apply this sanitized env to every spawn call site routed through REQ-001.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test injects fake *_API_KEY variables and asserts the produced child env contains zero matching keys while preserving PATH.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:40:07.302Z"
           },
           {
             "id": 4,
             "title": "Startup auth probe",
             "description": "Probe both agents with a trivial prompt and confirm both succeed under subscription auth.",
             "details": "Satisfies REQ-012 for parent task 3. Issue a tiny prompt to claude -p and to codex exec using the sanitized env from subtask 3; assert both return without error and without complaining about a missing API key. Record probe results so later turns can fail-fast if subscription auth has lapsed. Never include --bare in the claude invocation.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2,
               3
             ],
             "testStrategy": "Integration test runs the probe and asserts both round-trips succeed; a negative test injects a fake API key into env and asserts it does not appear in the spawned child.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:40:07.307Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T03:40:07.307Z"
       },
       {
         "id": "4",
@@ -1277,9 +1282,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T03:31:07.046Z",
+      "lastModified": "2026-05-30T03:40:07.307Z",
       "taskCount": 19,
-      "completedCount": 2,
+      "completedCount": 3,
       "tags": [
         "master"
       ]
