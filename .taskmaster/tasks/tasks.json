@@ -88,56 +88,61 @@
         "testStrategy": "Unit tests covering chunked split objects, partial trailing lines retained across chunks, CRLF normalization, and garbage non-JSON lines routed to the raw channel without exception.",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Chunk buffer and newline splitter",
             "description": "Implement the core split-on-newline state machine that buffers across chunk boundaries.",
             "details": "Satisfies REQ-002 for parent task 2. Maintain a string buffer; on each chunk append the bytes, split on \\n, retain the trailing partial line in the buffer, and yield only complete lines to the next stage. Do not yield a line until its newline has arrived so a JSON object split across two chunks is parsed once both arrive. Feeds REQ-003's stream-json consumer.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test feeds an object byte-by-byte in two chunks and asserts exactly one line is emitted after the second chunk.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:31:07.031Z"
           },
           {
             "id": 2,
             "title": "CR stripping for Windows pipes",
             "description": "Strip carriage returns before parsing so CRLF streams parse identically to LF.",
             "details": "Satisfies REQ-002 for parent task 2. Replace \\r before the JSON.parse call (not in the buffer itself, to preserve byte counts for logging) so a CRLF-terminated line yields the same JSON as a LF-terminated line. This matters because Windows pipes from claude.cmd shim emit CRLF. Keep the strip localized to the parse step.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test feeds a CRLF-terminated JSON object and asserts the parsed value equals the LF-terminated case.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:31:07.037Z"
           },
           {
             "id": 3,
             "title": "JSON parse with raw channel fallback",
             "description": "Parse complete lines as JSON and route non-JSON lines to a raw channel without throwing.",
             "details": "Satisfies REQ-002 for parent task 2. Wrap JSON.parse in try/catch; on failure, emit the original line on a separate raw channel so the caller can log it (REQ-013) instead of crashing the run. Non-JSON lines occur when claude prints diagnostic output or when permission prompts leak. The parser exposes both channels as event-style callbacks or async iterables.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2
             ],
             "testStrategy": "Feed a mix of valid JSON and garbage lines; assert valid objects appear on json channel and garbage appears verbatim on raw channel with no exception thrown.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:31:07.042Z"
           },
           {
             "id": 4,
             "title": "Parser test suite for chunk/partial/CRLF/garbage",
             "description": "Author the regression suite covering the four canonical edge cases.",
             "details": "Satisfies REQ-002 for parent task 2. Cases: chunked split objects, partial trailing lines retained across chunks, CRLF normalization, and garbage non-JSON lines routed to the raw channel without exception. The suite locks in the line-buffered semantics that REQ-003 depends on for session-id capture.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
             "testStrategy": "Run the suite; gate task 2 on all four canonical edge cases passing.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T03:31:07.046Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T03:31:07.046Z"
       },
       {
         "id": "3",
@@ -1272,9 +1277,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T03:14:50.981Z",
+      "lastModified": "2026-05-30T03:31:07.046Z",
       "taskCount": 19,
-      "completedCount": 1,
+      "completedCount": 2,
       "tags": [
         "master"
       ]
