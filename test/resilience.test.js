@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyFailure, nextBackoffMs, runWithResilience, parseRetryAfterMs, runWithRecovery } from '../src/resilience.js';
+import { classifyFailure, nextBackoffMs, runWithResilience, parseRetryAfterMs, runWithRecovery, classifyResult, parseResetTimeMs } from '../src/resilience.js';
 
 // REQ-017: classify rate-limit / auth-refresh failures from either agent; retry
 // auth ONCE (no API-key injection — each agent refreshes its own token), apply
@@ -117,6 +117,23 @@ test('a clean success on the first try returns immediately with no sleep or esca
 });
 
 // --- v3: run-level recovery (long wait on quota, give up after N -> exit) ---
+
+test('classifyResult detects a session/quota limit RETURNED in a result (not just thrown)', () => {
+  // the live bug: claude returned "You've hit your session limit" as normal output
+  assert.equal(classifyResult({ finalText: "You've hit your session limit · resets 11:20pm (America/Los_Angeles)" }), 'rate_limit');
+  assert.equal(classifyResult({ stderr: 'usage limit reached' }), 'rate_limit');
+  assert.equal(classifyResult({ finalText: 'Implemented sum; all tests pass; done.' }), 'none'); // normal output is not a limit
+  assert.equal(classifyResult({ decision: { verdict: 'continue' } }), 'none');
+  assert.equal(classifyResult(new Error('429 rate limit exceeded')), 'rate_limit');
+});
+
+test('parseResetTimeMs computes ms until a clock reset time (next occurrence)', () => {
+  const now = new Date(2026, 0, 1, 22, 0, 0); // 10:00pm local, no tz in text -> local
+  assert.equal(parseResetTimeMs('resets 11:20pm', now), (60 + 20) * 60000); // 80 min away
+  const morning = new Date(2026, 0, 1, 23, 30, 0); // 11:30pm; target 11:20pm already passed -> +24h
+  assert.equal(parseResetTimeMs('resets 11:20pm', morning), (24 * 60 - 10) * 60000);
+  assert.equal(parseResetTimeMs('no reset time here', now), null);
+});
 
 test('parseRetryAfterMs reads common retry hints, else null', () => {
   assert.equal(parseRetryAfterMs('Please try again in 2h13m'), (2 * 3600 + 13 * 60) * 1000);

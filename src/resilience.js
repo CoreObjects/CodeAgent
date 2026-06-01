@@ -41,6 +41,53 @@ export function classifyFailure(input) {
   return 'none';
 }
 
+// Strong, unambiguous "you are out of quota" signals — specific enough to match
+// the CLIs' own limit messages without false-positiving on normal code/output.
+const QUOTA_LIMIT_RE =
+  /(you'?ve hit your|session limit|usage limit|quota (?:exceeded|exhausted|reached)|rate limit(?:ed| exceeded| reached)|too many requests|\b429\b|resets?\s+\d{1,2}:\d{2}\s*[ap]m)/i;
+
+/**
+ * Classify a RESULT (not just a thrown error) for the recovery layer. The live
+ * bug: claude RETURNED "You've hit your session limit …" as normal output (no
+ * throw, exit 0), so a throw-only classifier missed it and the loop spun. This
+ * inspects the result's text fields for a strong quota signal.
+ * @returns {'rate_limit'|'auth_refresh'|'none'}
+ */
+export function classifyResult(r) {
+  if (r == null) return 'none';
+  if (r instanceof Error) return classifyFailure({ message: r.message, stderr: r.stderr });
+  const text = [r.stderr, r.stdout, r.finalText, r.message].filter(Boolean).map(String).join('\n');
+  return QUOTA_LIMIT_RE.test(text) ? 'rate_limit' : 'none';
+}
+
+function minutesOfDayInTz(now, tz) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(now);
+    const h = Number(parts.find((p) => p.type === 'hour').value) % 24;
+    const m = Number(parts.find((p) => p.type === 'minute').value);
+    return h * 60 + m;
+  } catch {
+    return now.getHours() * 60 + now.getMinutes();
+  }
+}
+
+/**
+ * Parse a clock-time reset hint like "resets 11:20pm (America/Los_Angeles)" into
+ * ms from `now` until the NEXT time that clock reads, in the given timezone (or
+ * local if absent). null when there is no such hint. Pure (now injected).
+ */
+export function parseResetTimeMs(text, now = new Date()) {
+  const m = String(text ?? '').match(/resets?\s+(\d{1,2}):(\d{2})\s*([ap])m\b(?:\s*\(([^)]+)\))?/i);
+  if (!m) return null;
+  let h = Number(m[1]) % 12;
+  if (m[3].toLowerCase() === 'p') h += 12;
+  const target = h * 60 + Number(m[2]);
+  const cur = minutesOfDayInTz(now, m[4]);
+  let delta = target - cur;
+  if (delta <= 0) delta += 24 * 60;
+  return delta * 60000;
+}
+
 /** Capped exponential backoff: baseMs * factor^attempt, clamped to capMs. Pure. */
 export function nextBackoffMs(attempt, { baseMs = 1000, factor = 2, capMs = 60000 } = {}) {
   return Math.min(capMs, baseMs * Math.pow(factor, attempt));
@@ -84,7 +131,7 @@ export function parseRetryAfterMs(text) {
  */
 export async function runWithRecovery(
   operation,
-  { classify = classifyFailure, longWaitMs = 2 * 60 * 60 * 1000, maxAttempts = 3, sleep = realSleep, onWait = () => {}, onAuthRetry = () => {} } = {},
+  { classify = classifyFailure, longWaitMs = 2 * 60 * 60 * 1000, maxAttempts = 3, bufferMs = 0, sleep = realSleep, onWait = () => {}, onAuthRetry = () => {} } = {},
 ) {
   let attempts = 0;
   let authRetried = false;
@@ -112,8 +159,18 @@ export async function runWithRecovery(
       err.kind = kind;
       throw err;
     }
-    const text = result instanceof Error ? result.message : `${result?.stderr ?? ''} ${result?.stdout ?? ''}`;
-    const waitMs = parseRetryAfterMs(text) ?? longWaitMs;
+    // Wait the right amount: an explicit "try again in N" hint, else a parsed
+    // clock reset time + buffer (e.g. "resets 11:20pm" -> wait until then +20min),
+    // else the long-wait default. finalText is included so a session-limit message
+    // RETURNED by the worker (the live bug) is seen.
+    const text = result instanceof Error ? `${result.message} ${result.stderr ?? ''}` : [result?.stderr, result?.stdout, result?.finalText, result?.message].filter(Boolean).join('\n');
+    const hinted = parseRetryAfterMs(text);
+    let waitMs;
+    if (hinted != null) waitMs = hinted;
+    else {
+      const reset = parseResetTimeMs(text);
+      waitMs = reset != null ? reset + bufferMs : longWaitMs;
+    }
     onWait({ attempt: attempts, waitMs, kind });
     await sleep(waitMs);
   }

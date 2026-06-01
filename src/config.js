@@ -26,8 +26,9 @@ export const DEFAULT_CONFIG = {
   // Run-level recovery for long interruptions (quota/network): wait this long
   // (or the server-hinted reset time) before retrying; give up after N attempts
   // so the run exits cleanly and can be resumed later.
-  recoveryWaitMs: 7_200_000, // 2h
+  recoveryWaitMs: 7_200_000, // 2h (fallback when no reset time is given)
   recoveryMaxAttempts: 3,
+  recoveryBufferMs: 1_200_000, // +20min added on top of a parsed reset time
   // Whole-project acceptance: self-heal this many rounds before escalating.
   acceptanceMaxRounds: 2,
 };

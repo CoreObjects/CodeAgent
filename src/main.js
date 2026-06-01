@@ -29,7 +29,7 @@ import { taskMasterNext, taskMasterSetStatus } from './task-trunk.js';
 import { createRunLogger, redactSecrets } from './logging.js';
 import { createEscalationChannel } from './escalation.js';
 import { createProgressGuard } from './progress-guard.js';
-import { runWithRecovery, classifyFailure } from './resilience.js';
+import { runWithRecovery, classifyResult } from './resilience.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { detectTestCommand } from './detect-test.js';
 import { collectProjectMap, readTaskCounts } from './project-map.js';
@@ -56,13 +56,6 @@ function renderTaskGoal(task, workerBootstrap) {
     .join('');
   return `${workerBootstrap}\n\n${body}`;
 }
-
-// Resilience classifies ONLY thrown failures (a successful turn/decision is never
-// re-judged by its text) — so a worker merely discussing "rate limits" can't
-// trigger a spurious retry. A rate-limited claude turn throws (no session id);
-// codex handles its own transient via re-ask-once inside runCodexSupervisor.
-const throwOnlyClassify = (r) =>
-  r instanceof Error ? classifyFailure({ message: r.message, stderr: r.stderr }) : 'none';
 
 /**
  * Compose all collaborators into runLoop `deps`. Returns { deps, runDir, memoPath }.
@@ -122,9 +115,10 @@ export function buildOrchestrator({
   // Run-level recovery: long-wait on quota/network, give up after N -> clean exit
   // (resume later with memo/tasks intact). onWait surfaces the pause to the screen.
   const recoveryOpts = {
-    classify: throwOnlyClassify,
+    classify: classifyResult, // detects a quota/session limit RETURNED by an agent, not just thrown
     longWaitMs: config.recoveryWaitMs,
     maxAttempts: config.recoveryMaxAttempts,
+    bufferMs: config.recoveryBufferMs, // wait until the parsed reset time + this buffer
     sleep,
     onWait: ({ kind, waitMs, attempt }) =>
       console.error(`[prd2code] ${kind}: waiting ${Math.round(waitMs / 60000)}min before retry (attempt ${attempt}/${config.recoveryMaxAttempts})…`),
