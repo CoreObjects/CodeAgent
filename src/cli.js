@@ -361,12 +361,13 @@ export async function runVerify({ argv = [], cwd = process.cwd(), runProcess = d
 
 /** docs <dir> — (re)generate the usage README from the PRD + code. */
 export async function runDocs({ argv = [], cwd = process.cwd(), runProcess = defaultRunProcess, baseEnv = process.env } = {}) {
-  const dir = projectDir(argv, cwd);
+  const opts = parseSupervArgs(argv); // reuse flag parsing; positional[0] is the dir
+  const dir = path.resolve(cwd, opts.prd ?? '.');
   assertProject(dir);
   process.env.PYTHONUTF8 = '1';
   const { binaries, env } = await prepareRun({ cwd: dir, baseEnv: { ...baseEnv, PYTHONUTF8: '1', ...HEADLESS_ENV }, runProcess });
   console.error('[prd2code] writing usage doc (README)…');
-  const r = await generateUsageDoc({ runProcess, claudeBin: binaries.claude, cwd: dir, env });
+  const r = await generateUsageDoc({ runProcess, claudeBin: binaries.claude, cwd: dir, env, model: opts.model || 'sonnet', effort: opts.effort || 'high' });
   console.error(r.ok ? '[prd2code] README written.' : '[prd2code] usage-doc generation failed.');
   return { reason: 'docs', ok: r.ok };
 }
