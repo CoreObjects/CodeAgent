@@ -48,6 +48,23 @@ export function buildCheckpointPrompt({ role = '', prdPath, projectMap = '', tes
     .join('\n\n');
 }
 
+/**
+ * Plan-review prompt (v4): codex reviews claude's proposed fix plan against the
+ * fix requirements — pure text review, no need to read files or run tests.
+ * Returns a plan-review schema object (accepted/assessment/feedback).
+ */
+export function buildPlanReviewPrompt({ role = '', fixRequirements = '', planText = '' }) {
+  return [
+    role,
+    '### FIX PLAN REVIEW',
+    `The worker has produced a plan to address the following fix requirements:\n\n${fixRequirements}`,
+    `### PROPOSED PLAN\n${planText}`,
+    'Review the plan against the requirements: is it complete, correct, and sufficient to fix all the listed issues? Are there any gaps, wrong approaches, or missing steps? Return the plan-review object per the JSON schema. Respond only with the structured object.',
+  ]
+    .filter((s) => s != null && s !== '')
+    .join('\n\n');
+}
+
 /** Defense-in-depth validation of codex's acceptance object. */
 export function validateAcceptance(d) {
   if (d == null || typeof d !== 'object') return { ok: false, errors: ['not an object'] };

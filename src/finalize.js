@@ -30,11 +30,21 @@ export async function runWithAcceptance({
   reviewProject,
   writeUsageDoc,
   askHuman,
-  cwd, // kept for API compat; no longer used (codex never writes files)
+  cwd, // kept for API compat
+  makeHealInstruction = null, // optional: (outcome) => Promise<string>
   maxRounds = 2,
   log = () => {},
   decideOutcome = decideAcceptanceOutcome,
 }) {
+  // Default: format fix_tasks as plain text (no plan-review cycle)
+  const defaultHeal = (outcome) => {
+    const fixes = (outcome.fixTasks ?? []).map((f, i) => `${i + 1}. ${f.title}: ${f.description}`).join('\n');
+    return Promise.resolve(
+      `Final acceptance review found issues that must be fixed:\n${outcome.report}\n\nRequired fixes:\n${fixes}`,
+    );
+  };
+  const buildHealInstruction = makeHealInstruction ?? defaultHeal;
+
   let healInstruction;
   for (let round = 0; ; round++) {
     const loopResult = await runLoop(healInstruction);
@@ -54,9 +64,8 @@ export async function runWithAcceptance({
       return { reason: 'acceptance_failed', turns: loopResult.turns, report: outcome.report };
     }
 
-    // heal: relay codex's findings as a text instruction to the worker — codex never writes files
-    const fixes = (outcome.fixTasks ?? []).map((f, i) => `${i + 1}. ${f.title}: ${f.description}`).join('\n');
-    healInstruction = `Final acceptance review found issues that must be fixed:\n${outcome.report}\n\nRequired fixes:\n${fixes}`;
+    // heal: build the instruction for the next loop (plan-review cycle or plain text)
+    healInstruction = await buildHealInstruction(outcome);
     log(`acceptance found issues — relaying ${(outcome.fixTasks ?? []).length} fix(es) to worker, re-running…`);
   }
 }

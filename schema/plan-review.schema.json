@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["accepted", "assessment", "feedback"],
+  "properties": {
+    "accepted": {
+      "type": "boolean",
+      "description": "true if the plan correctly and completely addresses all the fix requirements"
+    },
+    "assessment": {
+      "type": "string",
+      "description": "2-4 sentences evaluating the plan against the fix requirements"
+    },
+    "feedback": {
+      "type": "string",
+      "description": "specific issues with the plan if not accepted; empty string if accepted"
+    }
+  }
+}

@@ -31,7 +31,8 @@ import { runWithRecovery, classifyResult } from './resilience.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { detectTestCommand } from './detect-test.js';
 import { collectProjectMap } from './project-map.js';
-import { buildAcceptancePrompt, buildCheckpointPrompt, runAcceptance, generateUsageDoc } from './acceptance.js';
+import { buildAcceptancePrompt, buildCheckpointPrompt, buildPlanReviewPrompt, runAcceptance, generateUsageDoc } from './acceptance.js';
+import { runPlanReviewCycle } from './plan-review.js';
 import { classifyWorkerReport } from './worker-report.js';
 import { runWithAcceptance } from './finalize.js';
 import { buildLoginGuidance } from './onboarding.js';
@@ -223,6 +224,70 @@ export function buildOrchestrator({
     if (reporter && reporter.checkpoint) reporter.checkpoint({ checkpoint, decision });
   };
 
+  // plan mode runner: always fresh session, read-only (plan permission mode)
+  const runPlanTurn = (instruction) =>
+    runWithRecovery(
+      () =>
+        runClaudeTurn({
+          runProcess,
+          claudeBin: binaries.claude,
+          instruction,
+          sessionId: null,
+          permissionMode: 'plan',
+          allowedTools: config.allowedTools,
+          model: config.claudeModel,
+          effort: config.claudeEffort,
+          env,
+          timeoutMs: config.timeouts.claudeTurnMs,
+        }),
+      recoveryOpts,
+    );
+
+  const PLAN_REVIEW_SCHEMA_PATH = path.join(PROJECT_ROOT, 'schema', 'plan-review.schema.json');
+
+  // codex reviews claude's proposed fix plan (pure text — no file reads needed)
+  const reviewPlan = async ({ fixRequirements, planText }) => {
+    const prompt = buildPlanReviewPrompt({ role, fixRequirements, planText });
+    const decisionFile = path.join(runDir, 'plan-review.json');
+    const r = await runWithRecovery(
+      () =>
+        runAcceptance({
+          runProcess,
+          codexBin: binaries.codex,
+          schemaPath: PLAN_REVIEW_SCHEMA_PATH,
+          decisionFile,
+          prompt,
+          env,
+          cwd,
+          timeoutMs: config.timeouts.codexTurnMs,
+        }),
+      recoveryOpts,
+    );
+    return r.decision ?? { accepted: false, assessment: 'plan review failed', feedback: 'codex returned no decision' };
+  };
+
+  // plan-review cycle for checkpoint rejections and final acceptance heals
+  const makePlanInstruction = (fixRequirements) =>
+    runPlanReviewCycle({
+      runPlanTurn,
+      reviewPlan,
+      fixRequirements,
+      maxRounds: 2,
+      log: (m) => console.error(`[prd2code] plan-review: ${m}`),
+    });
+
+  const onCheckpointReject = async ({ checkpoint, decision }) => {
+    const fixes = (decision.fix_tasks ?? []).map((f, i) => `${i + 1}. ${f.title}: ${f.description}`).join('\n');
+    const fixRequirements = `Checkpoint "${checkpoint}" did NOT pass review.\n${decision.report ?? ''}\n\nRequired fixes:\n${fixes}`;
+    return makePlanInstruction(fixRequirements);
+  };
+
+  const makeHealInstruction = async (outcome) => {
+    const fixes = (outcome.fixTasks ?? []).map((f, i) => `${i + 1}. ${f.title}: ${f.description}`).join('\n');
+    const fixRequirements = `Final acceptance review found issues:\n${outcome.report}\n\nRequired fixes:\n${fixes}`;
+    return makePlanInstruction(fixRequirements);
+  };
+
   const deps = {
     runWorkerTurn,
     classifyReport: classifyWorkerReport,
@@ -236,6 +301,7 @@ export function buildOrchestrator({
     askHuman: askHumanFn,
     logTurn,
     onCheckpoint,
+    onCheckpointReject,
     beginInstruction,
   };
 
@@ -354,6 +420,7 @@ export async function runMain({
       reviewProject,
       writeUsageDoc,
       askHuman: askHumanFn,
+      makeHealInstruction,
       cwd,
       maxRounds: config.acceptanceMaxRounds,
       log: (m) => console.error(`[prd2code] ${m}`),

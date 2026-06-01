@@ -27,11 +27,21 @@ export async function runLoop(deps) {
     askHuman,
     logTurn = () => {},
     onCheckpoint = () => {},
+    onCheckpointReject = null, // optional: ({checkpoint, decision, groundTruth}) => Promise<string>
     beginInstruction,
     continueInstruction = 'Continue working toward the current phase checkpoint.',
     maxTurns = 200,
     maxCheckpointRejects = 3,
   } = deps;
+
+  // Default onCheckpointReject: format codex's fix_tasks as a plain text instruction
+  const defaultReject = ({ checkpoint, decision }) => {
+    const fixes = (decision.fix_tasks ?? []).map((f, i) => `${i + 1}. ${f.title}: ${f.description}`).join('\n');
+    return Promise.resolve(
+      `Checkpoint "${checkpoint}" did NOT pass review:\n${decision.report ?? ''}\nFix the following, then report again:\n${fixes}`,
+    );
+  };
+  const handleReject = onCheckpointReject ?? defaultReject;
 
   let sessionId = null;
   let instruction = beginInstruction;
@@ -110,8 +120,7 @@ export async function runLoop(deps) {
               instruction = ans || continueInstruction;
             }
           } else {
-            const fixes = (v.fix_tasks ?? []).map((f, i) => `${i + 1}. ${f.title}: ${f.description}`).join('\n');
-            instruction = `Checkpoint "${report.detail}" did NOT pass review:\n${v.report ?? ''}\nFix the following, then report again:\n${fixes}`;
+            instruction = await handleReject({ checkpoint: report.detail, decision: v, groundTruth });
           }
         }
         break;
