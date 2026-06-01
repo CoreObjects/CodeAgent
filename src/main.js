@@ -32,6 +32,7 @@ import { createProgressGuard } from './progress-guard.js';
 import { runWithResilience, classifyFailure } from './resilience.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { detectTestCommand } from './detect-test.js';
+import { collectProjectMap } from './project-map.js';
 import { route } from './router.js';
 import { runLoop } from './loop.js';
 
@@ -200,8 +201,17 @@ export function buildOrchestrator({
     return r; // { decision, valid, reAsked }
   };
 
-  const assemblePrompt = ({ goal, memo: memoText }) =>
-    assembleCodexPrompt({ role, goal, memo: memoText, memoCap: config.memoMaxChars });
+  // Collect the bounded project map each turn so codex has cross-task awareness
+  // (the single-task evidence digest can't give it). Cheap: git ls-files + tasks.json.
+  const assemblePrompt = async ({ goal, memo: memoText }) => {
+    let projectMap = '';
+    try {
+      projectMap = await collectProjectMap({ cwd, runProcess });
+    } catch {
+      /* a missing map must never block a turn */
+    }
+    return assembleCodexPrompt({ role, goal, memo: memoText, projectMap, memoCap: config.memoMaxChars });
+  };
 
   const renderGoal = (task) => renderTaskGoal(task, workerBootstrap);
 

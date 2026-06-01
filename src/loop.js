@@ -74,7 +74,8 @@ export async function runLoop(deps) {
       const groundTruth = await collect(snapshot);
       observeProgress(groundTruth); // REQ-016 — feed the mechanical stall counter
       const { json: evidenceJson, digest } = buildDigest({ turn, groundTruth, task, turnIndex });
-      const instructions = assemblePrompt({ goal: renderGoal(task), memo: memo.read() });
+      // assemblePrompt may be async (it collects the bounded project map) — await tolerates both.
+      const instructions = await assemblePrompt({ goal: renderGoal(task), memo: memo.read() });
       const { decision } = await decide({ instructions, evidenceJson });
 
       // 15.3 persist memo regardless of verdict (escalations carry it forward too).

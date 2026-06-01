@@ -44,6 +44,14 @@ test('assembleCodexPrompt includes role, goal and memo under fixed delimiters', 
   assert.match(p, /stdin/i); // evidence delivered via stdin
 });
 
+test('assembleCodexPrompt embeds the project map when provided, and omits it cleanly when not', () => {
+  const withMap = assembleCodexPrompt({ role: 'R', goal: 'G', memo: 'M', projectMap: '### PROJECT MAP\nLayout: src/ (3)' });
+  assert.match(withMap, /PROJECT MAP/);
+  assert.match(withMap, /src\/ \(3\)/);
+  const without = assembleCodexPrompt({ role: 'R', goal: 'G', memo: 'M' });
+  assert.doesNotMatch(without, /PROJECT MAP/);
+});
+
 // --- 8.3 decision validation ----------------------------------------------
 
 test('validateDecision accepts a well-formed decision', () => {

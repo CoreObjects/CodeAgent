@@ -30,18 +30,21 @@ export function buildCodexExecArgs({ schemaPath, decisionFile }) {
   ];
 }
 
-/** Bounded prompt: role + goal + rolling memo; evidence arrives via stdin (8.2). */
-export function assembleCodexPrompt({ role, goal, memo = '', memoCap = 6000 }) {
+/** Bounded prompt: role + goal + project map + rolling memo; evidence via stdin (8.2). */
+export function assembleCodexPrompt({ role, goal, memo = '', projectMap = '', memoCap = 6000 }) {
   const m = memo.length > memoCap ? memo.slice(0, memoCap) : memo;
   return [
     role,
     '### GOAL',
     goal,
+    projectMap || null, // already begins with "### PROJECT MAP" — global awareness across tasks
     '### ROLLING MEMO (your own notes from prior turns)',
     m,
     '### THIS TURN',
     'The evidence digest for this turn is in the <stdin> block. Compare the worker CLAIMS against the FACTS and decide a verdict per the JSON schema. Respond only with the structured object.',
-  ].join('\n\n');
+  ]
+    .filter((s) => s != null)
+    .join('\n\n');
 }
 
 /** Local schema validation (defense-in-depth beyond codex --output-schema) (8.3). */
