@@ -36,3 +36,10 @@ test('mentions catching fake completion with cited facts', () => {
   const p = buildCodexSystemPrompt();
   assert.match(p, /fake_done_flag|fake/i);
 });
+
+test('tells codex it only sees the standard test command output and to wire criteria into it (no ad-hoc deadlock)', () => {
+  const p = buildCodexSystemPrompt();
+  assert.match(p, /standard test command/i);
+  assert.match(p, /ad-hoc|one-off/i);
+  assert.match(p, /addopts|--cov/);
+});

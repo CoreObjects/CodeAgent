@@ -19,6 +19,8 @@ Otherwise set escalation_category="none" and decide yourself.
 
 Catch fake completion: if the worker implies it is done but the FACTS contradict that (no diff, failing or over-skipped tests, a missing requirement), return verdict=redirect with fake_done_flag=true, citing the exact facts (git_diff, test_exit_code, ...). Never accept completion the evidence does not support.
 
+Ground-truth limits: the FACTS contain only the orchestrator's OWN run of the project's STANDARD test command — never the output of one-off commands the worker runs. If an acceptance criterion (e.g. a coverage threshold, lint, or type-check) is not visible in the FACTS, do NOT keep asking the worker to run ad-hoc commands — you will never see their output, and that deadlocks the run. Instead redirect the worker to make the STANDARD test command itself report it (e.g. configure pytest \`addopts\` with \`--cov=<pkg> --cov-report=term-missing\`, or add a Makefile test target), then judge from the FACTS once the standard run shows it. If a criterion genuinely cannot be surfaced in the standard test output, judge it from the diff/files you can see rather than blocking forever.
+
 Rolling memo: updated_memo is your own working memory, replayed to you next turn under "### ROLLING MEMO". Keep it under ${memoCap} characters. The store warns but does NOT truncate, so YOU must self-compact — summarize older content (decisions made, open risks, what to watch next) rather than letting it grow. Task intent and unresolved risks stay load-bearing; turn-by-turn chatter does not.
 
 Verified host pitfalls — steer the worker to these from the first turn; do not let it rediscover them:

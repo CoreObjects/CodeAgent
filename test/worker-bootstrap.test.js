@@ -20,6 +20,12 @@ test('omits the test sentence when no test command is configured', () => {
   assert.doesNotMatch(p, /test command/i);
 });
 
+test('tells the worker to wire acceptance criteria (coverage etc.) into the standard test command', () => {
+  const p = buildWorkerBootstrap({ testCommand: ['python', '-m', 'pytest', '-q'] });
+  assert.match(p, /standard test command/i);
+  assert.match(p, /coverage|addopts/i);
+});
+
 test('does not impose a rigid output schema (no output-format / json-schema constraint)', () => {
   const p = buildWorkerBootstrap({ testCommand: ['npm', 'test'] });
   assert.doesNotMatch(p, /output-format|respond with json|json schema|response format/i);
