@@ -13,12 +13,14 @@ import { NdjsonParser } from './stream-parser.js';
 /** Build claude argv for one headless turn. (subtask 5.1) */
 export function buildClaudeTurnArgs(
   instruction,
-  { sessionId = null, permissionMode = 'acceptEdits', allowedTools = [] } = {},
+  { sessionId = null, permissionMode = 'acceptEdits', allowedTools = [], model = null, effort = null } = {},
 ) {
   const args = ['-p', instruction, '--output-format', 'stream-json', '--verbose'];
   if (sessionId) args.push('--resume', sessionId);
   if (permissionMode) args.push('--permission-mode', permissionMode);
   if (allowedTools.length) args.push('--allowedTools', allowedTools.join(' '));
+  if (model) args.push('--model', model); // e.g. sonnet / opus / haiku / full id
+  if (effort) args.push('--effort', effort); // low | medium | high | xhigh | max
   return args;
 }
 
@@ -77,11 +79,13 @@ export async function runClaudeTurn({
   sessionId = null,
   permissionMode = 'acceptEdits',
   allowedTools = [],
+  model = null,
+  effort = null,
   env,
   timeoutMs,
   onEvent,
 }) {
-  const args = buildClaudeTurnArgs(instruction, { sessionId, permissionMode, allowedTools });
+  const args = buildClaudeTurnArgs(instruction, { sessionId, permissionMode, allowedTools, model, effort });
 
   // Parse stream-json incrementally as stdout arrives, so onEvent fires LIVE.
   const parser = new NdjsonParser();

@@ -45,8 +45,10 @@ export function extractTasksArrayText(text) {
   return t;
 }
 
-async function askClaudeForTasks(runProcess, claudeBin, prompt, env, timeoutMs) {
+async function askClaudeForTasks(runProcess, claudeBin, prompt, env, timeoutMs, model, effort) {
   const args = ['-p', prompt, '--output-format', 'json', '--allowedTools', 'Read', '--permission-mode', 'acceptEdits'];
+  if (model) args.push('--model', model);
+  if (effort) args.push('--effort', effort);
   const res = await runProcess(claudeBin, args, { env, timeoutMs });
   if (res.code !== 0 || res.error) {
     throw new Error(`PRD decomposition failed: ${res.error?.message ?? `claude exit ${res.code}`}${res.stderr ? `\n${res.stderr}` : ''}`);
@@ -66,15 +68,15 @@ async function askClaudeForTasks(runProcess, claudeBin, prompt, env, timeoutMs) 
  * @param {{prdPath:string, claudeBin:string, env:object, num?:string, timeoutMs?:number, runProcess?:Function, now?:string}} opts
  * @returns {Promise<{master:{tasks:any[], metadata:object}}>}
  */
-export async function decomposePrd({ prdPath, claudeBin, env, num = '15 to 25', timeoutMs = 600_000, runProcess = defaultRunProcess, now }) {
+export async function decomposePrd({ prdPath, claudeBin, env, num = '15 to 25', timeoutMs = 600_000, runProcess = defaultRunProcess, now, model = 'sonnet', effort = 'high' }) {
   const meta = { description: `Tasks decomposed from ${prdPath}`, now: now ?? new Date().toISOString() };
 
-  const first = await askClaudeForTasks(runProcess, claudeBin, buildPrompt(prdPath, num, false), env, timeoutMs);
+  const first = await askClaudeForTasks(runProcess, claudeBin, buildPrompt(prdPath, num, false), env, timeoutMs, model, effort);
   try {
     return assembleTasksJson(extractTasksArrayText(first), meta);
   } catch {
     // retry once, demanding strict single-line escaped JSON
-    const second = await askClaudeForTasks(runProcess, claudeBin, buildPrompt(prdPath, num, true), env, timeoutMs);
+    const second = await askClaudeForTasks(runProcess, claudeBin, buildPrompt(prdPath, num, true), env, timeoutMs, model, effort);
     try {
       return assembleTasksJson(extractTasksArrayText(second), meta);
     } catch (e2) {

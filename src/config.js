@@ -23,6 +23,8 @@ export const DEFAULT_CONFIG = {
   // instead of being overridden by the CLI --allowedTools flag.
   permissionMode: 'auto',
   allowedTools: [],
+  claudeModel: 'sonnet', // worker model: sonnet | opus | haiku | full id
+  claudeEffort: 'high', // worker effort: low | medium | high | xhigh | max
   // Run-level recovery for long interruptions (quota/network): wait this long
   // (or the server-hinted reset time) before retrying; give up after N attempts
   // so the run exits cleanly and can be resumed later.

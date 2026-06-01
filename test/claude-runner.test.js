@@ -52,6 +52,14 @@ test('permission mode and allow-list are passed for non-interactive runs', () =>
   assert.ok(a.includes('--allowedTools'));
 });
 
+test('model and effort flags are passed when configured (and omitted when not)', () => {
+  const a = buildClaudeTurnArgs('x', { model: 'sonnet', effort: 'high' });
+  assert.equal(a[a.indexOf('--model') + 1], 'sonnet');
+  assert.equal(a[a.indexOf('--effort') + 1], 'high');
+  const none = buildClaudeTurnArgs('x', {});
+  assert.ok(!none.includes('--model') && !none.includes('--effort'));
+});
+
 // --- 5.3 turn normalization ----------------------------------------------
 
 test('normalizeClaudeTurn extracts sessionId, finalText, tool-uses, tool-results, result event', () => {

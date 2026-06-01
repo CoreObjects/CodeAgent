@@ -139,15 +139,14 @@ export function appendFixTasks(cwd, fixTasks = []) {
 }
 
 /** On acceptance, have the worker write an accurate README from the PRD + code. */
-export async function generateUsageDoc({ runProcess = defaultRunProcess, claudeBin, cwd, env, timeoutMs }) {
+export async function generateUsageDoc({ runProcess = defaultRunProcess, claudeBin, cwd, env, timeoutMs, model = 'sonnet', effort = 'high' }) {
   const prompt =
     'Read .taskmaster/docs/prd.md and the project code, then write an accurate README.md at the repo root: ' +
     'what it is, how to install, how to run, and key usage examples. Create or overwrite README.md so it matches the real code. ' +
     'Then commit it.';
-  const res = await runProcess(
-    claudeBin,
-    ['-p', prompt, '--output-format', 'json', '--allowedTools', 'Read Write Edit Bash Glob Grep', '--permission-mode', 'acceptEdits'],
-    { cwd, env, timeoutMs },
-  );
+  const args = ['-p', prompt, '--output-format', 'json', '--allowedTools', 'Read Write Edit Bash Glob Grep', '--permission-mode', 'acceptEdits'];
+  if (model) args.push('--model', model);
+  if (effort) args.push('--effort', effort);
+  const res = await runProcess(claudeBin, args, { cwd, env, timeoutMs });
   return { ok: res.code === 0 && !res.error };
 }

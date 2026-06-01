@@ -121,6 +121,8 @@ export function buildOrchestrator({
           sessionId,
           permissionMode: config.permissionMode,
           allowedTools: config.allowedTools,
+          model: config.claudeModel,
+          effort: config.claudeEffort,
           env,
           timeoutMs: config.timeouts.claudeTurnMs,
           onEvent: reporter ? (ev) => reporter.workerEvent(ev) : undefined, // live stream
