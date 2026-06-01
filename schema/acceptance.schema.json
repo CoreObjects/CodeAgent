@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["accept", "assessment", "findings", "fix_tasks", "report"],
+  "properties": {
+    "accept": { "type": "boolean", "description": "true only if the whole project meets the PRD acceptance criteria and the test suite passes" },
+    "assessment": { "type": "string", "description": "1-5 sentences: what you reviewed and the overall verdict" },
+    "findings": {
+      "type": "array",
+      "description": "Concrete problems found during the deep review; empty if none",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "detail", "evidence"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["blocker", "major", "minor"] },
+          "detail": { "type": "string" },
+          "evidence": { "type": "string", "description": "the file/test/command output that proves it" }
+        }
+      }
+    },
+    "fix_tasks": {
+      "type": "array",
+      "description": "When accept is false: the tasks the worker must do to pass; empty when accept is true",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "description"],
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "report": { "type": "string", "description": "human-readable acceptance report citing the PRD criteria and the evidence" }
+  }
+}

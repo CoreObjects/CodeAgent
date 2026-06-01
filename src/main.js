@@ -33,12 +33,15 @@ import { runWithRecovery, classifyFailure } from './resilience.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { detectTestCommand } from './detect-test.js';
 import { collectProjectMap } from './project-map.js';
+import { buildAcceptancePrompt, runAcceptance, appendFixTasks, generateUsageDoc } from './acceptance.js';
+import { runWithAcceptance } from './finalize.js';
 import { route } from './router.js';
 import { runLoop } from './loop.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(HERE, '..');
 const DEFAULT_SCHEMA_PATH = path.join(PROJECT_ROOT, 'schema', 'codex-decision.schema.json');
+const ACCEPTANCE_SCHEMA_PATH = path.join(PROJECT_ROOT, 'schema', 'acceptance.schema.json');
 
 /** Render a task as the worker's first-turn instruction AND codex's GOAL. */
 function renderTaskGoal(task, workerBootstrap) {
@@ -235,7 +238,38 @@ export function buildOrchestrator({
     onTaskStart,
   };
 
-  return { deps, runDir, memoPath };
+  // --- Phase 3: whole-project acceptance helpers (codex deep-review + usage doc) ---
+  const prdPath = path.join(cwd, '.taskmaster', 'docs', 'prd.md');
+  const reviewProject = () =>
+    runWithRecovery(async () => {
+      let projectMap = '';
+      try {
+        projectMap = await collectProjectMap({ cwd, runProcess });
+      } catch {
+        /* map best-effort */
+      }
+      const prompt = buildAcceptancePrompt({
+        role,
+        prdPath,
+        projectMap,
+        testCommand: config.testCommand ?? detectTestCommand(cwd),
+      });
+      return runAcceptance({
+        runProcess,
+        codexBin: binaries.codex,
+        schemaPath: ACCEPTANCE_SCHEMA_PATH,
+        decisionFile: path.join(runDir, 'acceptance.json'),
+        prompt,
+        env,
+        cwd,
+        timeoutMs: config.timeouts.codexTurnMs,
+      });
+    }, recoveryOpts);
+
+  const writeUsageDoc = () =>
+    generateUsageDoc({ runProcess, claudeBin: binaries.claude, cwd, env, timeoutMs: config.timeouts.claudeTurnMs });
+
+  return { deps, runDir, memoPath, reviewProject, writeUsageDoc, askHuman: askHumanFn };
 }
 
 function loadConfigFile(cwd) {
@@ -300,7 +334,7 @@ export async function runMain({
     );
   }
 
-  const { deps, runDir } = buildOrchestrator({
+  const { deps, runDir, reviewProject, writeUsageDoc, askHuman: askHumanFn } = buildOrchestrator({
     config,
     binaries,
     schemaPath,
@@ -314,9 +348,21 @@ export async function runMain({
     totalTasks,
     runNote,
   });
+
+  // Run the per-task loop, then whole-project acceptance (self-heal up to N rounds,
+  // then escalate). reviewProject is codex's deep, firsthand review of the project.
   let result;
   try {
-    result = await runLoop(deps);
+    result = await runWithAcceptance({
+      runLoop: () => runLoop(deps),
+      reviewProject,
+      writeUsageDoc,
+      askHuman: askHumanFn,
+      appendFixTasks,
+      cwd,
+      maxRounds: config.acceptanceMaxRounds,
+      log: (m) => console.error(`[prd2code] ${m}`),
+    });
   } catch (err) {
     if (err.recoveryExhausted) {
       // Quota/network never recovered after N attempts — exit cleanly; the memo

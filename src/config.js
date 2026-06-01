@@ -28,6 +28,8 @@ export const DEFAULT_CONFIG = {
   // so the run exits cleanly and can be resumed later.
   recoveryWaitMs: 7_200_000, // 2h
   recoveryMaxAttempts: 3,
+  // Whole-project acceptance: self-heal this many rounds before escalating.
+  acceptanceMaxRounds: 2,
 };
 
 const API_KEY_NAMED = new Set(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY']);
