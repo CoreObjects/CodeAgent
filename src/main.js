@@ -336,7 +336,7 @@ export function buildOrchestrator({
   const writeUsageDoc = () =>
     generateUsageDoc({ runProcess, claudeBin: binaries.claude, cwd, env, timeoutMs: config.timeouts.claudeTurnMs });
 
-  return { deps, runDir, memoPath, reviewProject, writeUsageDoc, askHuman: askHumanFn };
+  return { deps, runDir, memoPath, reviewProject, writeUsageDoc, makeHealInstruction, askHuman: askHumanFn };
 }
 
 function loadConfigFile(cwd) {
@@ -396,7 +396,7 @@ export async function runMain({
 } = {}) {
   const { config, env, binaries } = await prepareRun({ cwd, configOverride, baseEnv, runProcess });
 
-  const { deps, runDir, reviewProject, writeUsageDoc, askHuman: askHumanFn } = buildOrchestrator({
+  const { deps, runDir, reviewProject, writeUsageDoc, makeHealInstruction, askHuman: askHumanFn } = buildOrchestrator({
     config,
     binaries,
     schemaPath,
