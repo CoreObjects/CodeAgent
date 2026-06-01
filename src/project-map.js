@@ -17,6 +17,17 @@ function topDir(file) {
   return i === -1 ? '.' : file.slice(0, i);
 }
 
+/** Read done/total task counts from tasks.json (sync). Used for resume-accurate progress. */
+export function readTaskCounts(cwd) {
+  try {
+    const tj = JSON.parse(fs.readFileSync(path.join(cwd, '.taskmaster', 'tasks', 'tasks.json'), 'utf8'));
+    const tasks = tj.master?.tasks ?? [];
+    return { done: tasks.filter((t) => t.status === 'done').length, total: tasks.length };
+  } catch {
+    return { done: 0, total: 0 };
+  }
+}
+
 /** Collect the map inputs from a repo: tracked files (git ls-files) + tasks.json. */
 export async function collectProjectMap({ cwd, runProcess = defaultRunProcess, notes = '', caps } = {}) {
   const ls = await runProcess('git', ['ls-files'], { cwd });

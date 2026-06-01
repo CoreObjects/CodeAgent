@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildProjectMap, collectProjectMap } from '../src/project-map.js';
+import { buildProjectMap, collectProjectMap, readTaskCounts } from '../src/project-map.js';
 
 // A bounded, every-turn project map that gives codex global awareness it lacks
 // from the single-task evidence digest: the layout, per-task status, and codex's
@@ -43,6 +43,19 @@ test('handles empty inputs without throwing', () => {
   const map = buildProjectMap({});
   assert.match(map, /PROJECT MAP/);
   assert.match(map, /done 0\/0/);
+});
+
+test('readTaskCounts reports done/total for resume-accurate progress', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tc-'));
+  try {
+    const tp = path.join(dir, '.taskmaster', 'tasks', 'tasks.json');
+    fs.mkdirSync(path.dirname(tp), { recursive: true });
+    fs.writeFileSync(tp, JSON.stringify({ master: { tasks: [{ id: 1, status: 'done' }, { id: 2, status: 'done' }, { id: 3, status: 'pending' }, { id: 4, status: 'pending' }] } }));
+    assert.deepEqual(readTaskCounts(dir), { done: 2, total: 4 }); // resuming here -> next is #3 of 4
+    assert.deepEqual(readTaskCounts(path.join(dir, 'nope')), { done: 0, total: 0 });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('collectProjectMap reads git ls-files and tasks.json from the repo', async () => {

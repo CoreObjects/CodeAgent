@@ -32,7 +32,7 @@ import { createProgressGuard } from './progress-guard.js';
 import { runWithRecovery, classifyFailure } from './resilience.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { detectTestCommand } from './detect-test.js';
-import { collectProjectMap } from './project-map.js';
+import { collectProjectMap, readTaskCounts } from './project-map.js';
 import { buildAcceptancePrompt, runAcceptance, appendFixTasks, generateUsageDoc } from './acceptance.js';
 import { runWithAcceptance } from './finalize.js';
 import { buildLoginGuidance } from './onboarding.js';
@@ -216,8 +216,12 @@ export function buildOrchestrator({
     log.logTurn(t);
     if (reporter) reporter.turn(t);
   };
-  const onTaskStart = ({ task, taskIndex }) => {
-    if (reporter) reporter.taskStart({ task, index: taskIndex, total: totalTasks });
+  // Progress index from the REAL done-count (not a per-run counter), so resume
+  // shows the true position (e.g. Task 6/23, not 1/23) and self-heal stays accurate.
+  const onTaskStart = ({ task }) => {
+    if (!reporter) return;
+    const { done, total } = readTaskCounts(cwd);
+    reporter.taskStart({ task, index: done + 1, total: total || totalTasks });
   };
 
   const deps = {
