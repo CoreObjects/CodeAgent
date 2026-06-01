@@ -28,6 +28,26 @@ export function buildAcceptancePrompt({ role = '', prdPath, projectMap = '', tes
     .join('\n\n');
 }
 
+/**
+ * Checkpoint-scoped verification prompt (v4). codex is the EXAMINER: the worker
+ * self-reports it reached a checkpoint; codex reads the PRD's criteria for THAT
+ * checkpoint, reads the code, runs the tests, and judges whether the REAL
+ * functionality is implemented — not a mock/stub/hardcoded result faked to pass.
+ * Reuses the acceptance schema (accept/findings/fix_tasks/report).
+ */
+export function buildCheckpointPrompt({ role = '', prdPath, projectMap = '', testCommand = null, checkpoint = '' }) {
+  const tc = Array.isArray(testCommand) ? testCommand.join(' ') : testCommand;
+  return [
+    role,
+    `### CHECKPOINT VERIFICATION — "${checkpoint}"`,
+    `The worker reports it has reached this checkpoint. Read the PRD at ${prdPath} and find the phase / validation-checkpoint criteria for "${checkpoint}". You are in a read-only sandbox: READ the relevant source files and RUN the project test command yourself${tc ? ` (\`${tc}\`)` : ''} to see real results. Verify the REAL functionality is implemented — not a mock, stub, hardcoded example, or a result faked just to pass a check.`,
+    projectMap || null,
+    "Return the acceptance object per the JSON schema, scoped to THIS checkpoint: accept=true ONLY if this checkpoint's criteria are genuinely met and its tests pass; otherwise accept=false with concrete findings (cite the file / test output proving the gap or the fake) and the fix_tasks the worker must do to pass this checkpoint. Respond only with the structured object.",
+  ]
+    .filter((s) => s != null)
+    .join('\n\n');
+}
+
 /** Defense-in-depth validation of codex's acceptance object. */
 export function validateAcceptance(d) {
   if (d == null || typeof d !== 'object') return { ok: false, errors: ['not an object'] };

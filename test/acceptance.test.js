@@ -4,7 +4,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildAcceptancePrompt, validateAcceptance, decideAcceptanceOutcome, runAcceptance, appendFixTasks, generateUsageDoc } from '../src/acceptance.js';
+import { buildAcceptancePrompt, buildCheckpointPrompt, validateAcceptance, decideAcceptanceOutcome, runAcceptance, appendFixTasks, generateUsageDoc } from '../src/acceptance.js';
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), '..', '..');
 const SCHEMA = path.join(ROOT, 'schema', 'acceptance.schema.json');
@@ -20,6 +20,14 @@ test('buildAcceptancePrompt instructs a deep, firsthand review against the PRD a
   assert.match(p, /npm test/); // run the suite
   assert.match(p, /accept/i);
   assert.match(p, /PROJECT MAP/); // map embedded
+});
+
+test('buildCheckpointPrompt scopes the review to one checkpoint and demands real (not faked) functionality', () => {
+  const p = buildCheckpointPrompt({ prdPath: '.taskmaster/docs/prd.md', checkpoint: 'Phase 1 — engine', testCommand: 'pytest -q', projectMap: '### PROJECT MAP\nsrc/ (3)' });
+  assert.match(p, /Phase 1 — engine/);
+  assert.match(p, /this checkpoint/i);
+  assert.match(p, /mock|stub|faked|hardcoded/i);
+  assert.match(p, /pytest -q/);
 });
 
 test('validateAcceptance requires the core fields', () => {

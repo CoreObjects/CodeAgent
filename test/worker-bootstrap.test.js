@@ -32,6 +32,16 @@ test('warns that GUI tests must be headless / non-blocking (no modal exec, offsc
   assert.match(p, /exec\(\)|modal|hang/i);
 });
 
+test('drives phase-by-phase and defines the STATUS self-report protocol', () => {
+  const p = buildWorkerBootstrap({ testCommand: ['python', '-m', 'pytest', '-q'] });
+  assert.match(p, /phase by phase/i); // self-drive a whole phase
+  assert.match(p, /STATUS: CHECKPOINT_REACHED/);
+  assert.match(p, /STATUS: WORKING/);
+  assert.match(p, /STATUS: BLOCKED/);
+  assert.match(p, /STATUS: PROJECT_COMPLETE/);
+  assert.match(p, /real functionality/i); // no faked results
+});
+
 test('does not impose a rigid output schema (no output-format / json-schema constraint)', () => {
   const p = buildWorkerBootstrap({ testCommand: ['npm', 'test'] });
   assert.doesNotMatch(p, /output-format|respond with json|json schema|response format/i);
