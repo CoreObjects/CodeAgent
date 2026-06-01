@@ -161,6 +161,25 @@ test('pre-turn guard escalation honoring an explicit abort stops the loop before
   assert.equal(calls.worker.length, 0); // aborted at the guard, before the worker ran
 });
 
+test('starts a fresh worker session per task (resets sessionId) to bound token growth', async () => {
+  const { deps } = makeDeps(
+    [
+      { verdict: 'continue', message_to_claude: 'go', updated_memo: 'm' },
+      { verdict: 'task_complete', updated_memo: 'm' },
+      { verdict: 'continue', message_to_claude: 'go', updated_memo: 'm' },
+      { verdict: 'task_complete', updated_memo: 'm' },
+    ],
+    { tasks: [{ id: '1' }, { id: '2' }] },
+  );
+  const seen = [];
+  deps.runWorkerTurn = async ({ sessionId }) => {
+    seen.push(sessionId);
+    return { sessionId: 's1', finalText: 'x' };
+  };
+  await runLoop(deps);
+  assert.deepEqual(seen, [null, 's1', null, 's1']); // fresh at each task's first turn, continued within a task
+});
+
 test('calls onTaskStart once per task with an incrementing index (for the live reporter)', async () => {
   const { deps } = makeDeps(
     [

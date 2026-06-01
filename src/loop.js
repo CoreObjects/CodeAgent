@@ -43,6 +43,11 @@ export async function runLoop(deps) {
     taskIndex += 1;
     onTaskStart({ task, taskIndex }); // progress hook for the live reporter — no judgment
 
+    // Fresh worker session per task: bounds the worker's growing transcript (the
+    // token sink). It re-reads the repo each task; codex's rolling memo + project
+    // map carry the cross-task continuity, so nothing load-bearing is lost.
+    sessionId = null;
+
     let pendingInstruction = null;
     let taskTurns = 0;
     let advanced = false;
