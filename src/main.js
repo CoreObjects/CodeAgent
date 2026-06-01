@@ -20,42 +20,27 @@ import { runProcess as defaultRunProcess } from './proc.js';
 import { validateConfig, sanitizeEnv, resolveAllBinaries, runStartupProbe } from './config.js';
 import { runClaudeTurn } from './claude-runner.js';
 import { snapshotStart as gtSnapshotStart, collect as gtCollect } from './ground-truth.js';
-import { buildEvidenceDigest } from './evidence-digest.js';
 import { runCodexSupervisor, assembleCodexPrompt } from './codex-supervisor.js';
 import { createMemoStore } from './memo-store.js';
 import { buildCodexSystemPrompt } from './codex-prompt.js';
 import { buildWorkerBootstrap } from './worker-bootstrap.js';
-import { taskMasterNext, taskMasterSetStatus } from './task-trunk.js';
 import { createRunLogger, redactSecrets } from './logging.js';
 import { createEscalationChannel } from './escalation.js';
 import { createProgressGuard } from './progress-guard.js';
 import { runWithRecovery, classifyResult } from './resilience.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { detectTestCommand } from './detect-test.js';
-import { collectProjectMap, readTaskCounts } from './project-map.js';
-import { buildAcceptancePrompt, runAcceptance, appendFixTasks, generateUsageDoc } from './acceptance.js';
+import { collectProjectMap } from './project-map.js';
+import { buildAcceptancePrompt, buildCheckpointPrompt, runAcceptance, appendFixTasks, generateUsageDoc } from './acceptance.js';
+import { classifyWorkerReport } from './worker-report.js';
 import { runWithAcceptance } from './finalize.js';
 import { buildLoginGuidance } from './onboarding.js';
-import { route } from './router.js';
 import { runLoop } from './loop.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(HERE, '..');
 const DEFAULT_SCHEMA_PATH = path.join(PROJECT_ROOT, 'schema', 'codex-decision.schema.json');
 const ACCEPTANCE_SCHEMA_PATH = path.join(PROJECT_ROOT, 'schema', 'acceptance.schema.json');
-
-/** Render a task as the worker's first-turn instruction AND codex's GOAL. */
-function renderTaskGoal(task, workerBootstrap) {
-  const body = [
-    `# Task ${task.id}: ${task.title ?? ''}`.trim(),
-    task.description ? `\n${task.description}` : '',
-    task.details ? `\n\n## Details\n${task.details}` : '',
-    task.testStrategy ? `\n\n## Test strategy\n${task.testStrategy}` : '',
-  ]
-    .filter(Boolean)
-    .join('');
-  return `${workerBootstrap}\n\n${body}`;
-}
 
 /**
  * Compose all collaborators into runLoop `deps`. Returns { deps, runDir, memoPath }.
@@ -126,12 +111,6 @@ export function buildOrchestrator({
 
   // --- adapters: each binds a tested module to the loop's dep contract ---
 
-  const nextTask = () =>
-    taskMasterNext({ runProcess, taskMasterBin: binaries.taskMaster, cwd, env });
-
-  const setStatus = (id, status) =>
-    taskMasterSetStatus({ runProcess, taskMasterBin: binaries.taskMaster, cwd, env }, id, status);
-
   const runWorkerTurn = ({ instruction, sessionId }) =>
     runWithRecovery(
       () =>
@@ -163,16 +142,50 @@ export function buildOrchestrator({
       env,
     });
 
-  const buildDigest = ({ turn, groundTruth, task, turnIndex }) => {
-    const { digest, json } = buildEvidenceDigest(
-      { turn, groundTruth, task, turnIndex },
-      { totalCap: config.digestMaxChars },
+  const observeProgress = (groundTruth) => guard.observe(groundTruth);
+  // Mechanical stall guard (free, no LLM): surfaces a spin to the human.
+  const stallGuard = () => (guard.shouldEscalate() ? { escalate: true, question: guard.question('the current phase') } : null);
+
+  const projectMapNow = async () => {
+    try {
+      return await collectProjectMap({ cwd, runProcess });
+    } catch {
+      return '';
+    }
+  };
+  const checkpointPrdPath = path.join(cwd, '.taskmaster', 'docs', 'prd.md');
+  const testCmd = () => config.testCommand ?? detectTestCommand(cwd);
+
+  // codex = checkpoint EXAMINER: at a reported checkpoint, read the PRD criteria +
+  // the code + run the tests, judge real-vs-faked functionality. Reuses runAcceptance.
+  const verifyCheckpoint = async ({ checkpoint }) => {
+    const projectMap = await projectMapNow();
+    const prompt =
+      buildCheckpointPrompt({ role, prdPath: checkpointPrdPath, projectMap, testCommand: testCmd(), checkpoint }) +
+      (memo.read() ? `\n\n### YOUR PRIOR CHECKPOINT NOTES\n${memo.read()}` : '');
+    const r = await runWithRecovery(
+      () =>
+        runAcceptance({
+          runProcess,
+          codexBin: binaries.codex,
+          schemaPath: ACCEPTANCE_SCHEMA_PATH,
+          decisionFile: path.join(runDir, 'checkpoint.json'),
+          prompt,
+          env,
+          cwd,
+          timeoutMs: config.timeouts.codexTurnMs,
+        }),
+      recoveryOpts,
     );
-    return { digest, json };
+    return r.decision;
   };
 
-  const decide = ({ instructions, evidenceJson }) =>
-    runWithRecovery(
+  // codex answers/escalates a worker BLOCK (rare). Reuses runCodexSupervisor.
+  const decideBlock = async ({ question, groundTruth }) => {
+    const projectMap = await projectMapNow();
+    const blockRole = `${role}\n\nThe worker is BLOCKED and needs a decision. ANSWER it yourself (verdict=redirect, put the answer/decision in message_to_claude) when it is within your authority; ESCALATE (verdict=escalate) only if it hits the whitelist (irreversible / money / security_privacy_legal / scope_product / judgment_human_would_want).`;
+    const instructions = assembleCodexPrompt({ role: blockRole, goal: `BLOCKED: ${question}`, memo: memo.read(), projectMap, memoCap: config.memoMaxChars });
+    const r = await runWithRecovery(
       () =>
         runCodexSupervisor({
           runProcess,
@@ -180,68 +193,48 @@ export function buildOrchestrator({
           schemaPath,
           decisionFile: decisionPath,
           instructions,
-          evidenceJson,
+          evidenceJson: JSON.stringify({ blocked_question: question, ground_truth: groundTruth }),
           env,
           cwd,
           timeoutMs: config.timeouts.codexTurnMs,
         }),
       recoveryOpts,
-    ); // returns { decision, valid, reAsked }; throws recoveryExhausted only after N quota failures
-
-  // Collect the bounded project map each turn so codex has cross-task awareness
-  // (the single-task evidence digest can't give it). Cheap: git ls-files + tasks.json.
-  const assemblePrompt = async ({ goal, memo: memoText }) => {
-    let projectMap = '';
-    try {
-      projectMap = await collectProjectMap({ cwd, runProcess });
-    } catch {
-      /* a missing map must never block a turn */
-    }
-    return assembleCodexPrompt({ role, goal, memo: memoText, projectMap, memoCap: config.memoMaxChars });
+    );
+    const d = r.decision;
+    if (d.verdict === 'escalate') return { kind: 'escalate', question: d.escalation_question };
+    if (d.verdict === 'abort') return { kind: 'abort' };
+    return { kind: 'redirect', message: d.message_to_claude || d.assessment || 'Proceed.' };
   };
 
-  const renderGoal = (task) => {
-    const goal = renderTaskGoal(task, workerBootstrap);
-    return runNote ? `${runNote}\n\n${goal}` : goal;
-  };
+  const beginInstruction =
+    `${runNote ? runNote + '\n\n' : ''}${workerBootstrap}\n\n` +
+    'Begin now: read the PRD and the task-master tasks, then start with the first phase and work toward its checkpoint.';
 
-  // Per-task stall tracking: reset the mechanical counter on each task's first turn.
-  const preTurnGuard = ({ task, taskTurns }) => {
-    if (taskTurns === 1) guard.reset();
-    return guard.shouldEscalate() ? { escalate: true, question: guard.question(task.id) } : null;
-  };
-  const observeProgress = (groundTruth) => guard.observe(groundTruth);
-
-  // Persist every turn to disk AND stream it to the console (if a reporter is wired).
   const logTurn = (t) => {
     log.logTurn(t);
-    if (reporter) reporter.turn(t);
+    const changed = t.groundTruth?.changedFiles?.length ?? 0;
+    const test = t.groundTruth?.test ? `, test exit ${t.groundTruth.test.exitCode}` : '';
+    console.error(`    facts: ${changed} file(s) changed${test} · worker: ${t.report?.status ?? '?'}`);
   };
-  // Progress index from the REAL done-count (not a per-run counter), so resume
-  // shows the true position (e.g. Task 6/23, not 1/23) and self-heal stays accurate.
-  const onTaskStart = ({ task }) => {
-    if (!reporter) return;
-    const { done, total } = readTaskCounts(cwd);
-    reporter.taskStart({ task, index: done + 1, total: total || totalTasks });
+  const onCheckpoint = ({ checkpoint, decision }) => {
+    console.error(`[prd2code] checkpoint "${checkpoint}": ${decision.accept ? 'PASSED ✓' : 'REJECTED ✗ — ' + String(decision.report ?? '').slice(0, 200)}`);
+    if (reporter && reporter.checkpoint) reporter.checkpoint({ checkpoint, decision });
   };
 
   const deps = {
-    nextTask,
-    setStatus,
     runWorkerTurn,
+    classifyReport: classifyWorkerReport,
     snapshotStart,
     collect,
-    buildDigest,
-    decide,
-    memo,
-    assemblePrompt,
-    renderGoal,
-    route,
-    logTurn,
-    askHuman: askHumanFn,
-    preTurnGuard,
     observeProgress,
-    onTaskStart,
+    stallGuard,
+    verifyCheckpoint,
+    decideBlock,
+    memo,
+    askHuman: askHumanFn,
+    logTurn,
+    onCheckpoint,
+    beginInstruction,
   };
 
   // --- Phase 3: whole-project acceptance helpers (codex deep-review + usage doc) ---

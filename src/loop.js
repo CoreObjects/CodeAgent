@@ -1,128 +1,102 @@
-// loop.js — REQ-008
-// The per-turn control loop. Pure orchestration: fetch the on-deck task, run one
-// worker turn, collect ground truth, build the digest, call codex, persist the
-// memo, and route the verdict — repeat until task_complete, then advance.
+// loop.js — v4: phase-driven control loop.
 //
-// The ONLY loop-side branches permitted are: turn-completion detection (inside
-// runWorkerTurn), the verdict switch, and numeric safety guards that escalate to a
-// human. NO deviation taxonomy lives here — all judgment is codex's.
+// The worker (claude) SELF-DRIVES a whole PRD phase and ends each message with a
+// STATUS marker. We parse it MECHANICALLY (no LLM) and route cheaply:
+//   WORKING            -> auto-continue (NO codex — this is where token is saved)
+//   BLOCKED            -> codex/human decides, answer relayed to the worker
+//   CHECKPOINT_REACHED -> codex deep-verifies THIS checkpoint (the examiner) ->
+//                         pass: proceed to next phase (fresh session) ;
+//                         reject: relay the required fixes, worker resumes
+//   PROJECT_COMPLETE   -> return 'done' (the wrapper runs the final acceptance)
 //
-// Every collaborator is injected, so the loop is fully testable and carries no
-// hidden coupling. main/assembly wires the real modules into these functions.
-
-import { route as defaultRoute } from './router.js';
+// codex is invoked only at checkpoints and the rare block — not every turn. The
+// mechanical safety net (ground truth + stall guard) still runs every turn for
+// free. Every collaborator is injected, so the loop is fully testable.
 
 export async function runLoop(deps) {
   const {
-    nextTask,
-    setStatus,
     runWorkerTurn,
+    classifyReport,
     snapshotStart,
     collect,
-    buildDigest,
-    decide,
-    memo,
-    assemblePrompt,
-    renderGoal,
-    route = defaultRoute,
-    logTurn = () => {},
-    askHuman,
-    preTurnGuard = () => null,
     observeProgress = () => {},
-    onTaskStart = () => {},
-    maxTurnsPerTask = 50,
+    stallGuard = () => null,
+    verifyCheckpoint,
+    decideBlock,
+    memo,
+    askHuman,
+    logTurn = () => {},
+    onCheckpoint = () => {},
+    beginInstruction,
+    continueInstruction = 'Continue working toward the current phase checkpoint.',
+    maxTurns = 200,
   } = deps;
 
-  let turnIndex = 0;
-  let taskIndex = 0;
   let sessionId = null;
+  let instruction = beginInstruction;
+  let turns = 0;
 
   for (;;) {
-    const task = await nextTask();
-    if (!task) return { reason: 'done', turns: turnIndex };
-    taskIndex += 1;
-    onTaskStart({ task, taskIndex }); // progress hook for the live reporter — no judgment
-
-    // Fresh worker session per task: bounds the worker's growing transcript (the
-    // token sink). It re-reads the repo each task; codex's rolling memo + project
-    // map carry the cross-task continuity, so nothing load-bearing is lost.
-    sessionId = null;
-
-    let pendingInstruction = null;
-    let taskTurns = 0;
-    let advanced = false;
-    let aborted = false;
-
-    while (!advanced && !aborted) {
-      turnIndex += 1;
-      taskTurns += 1;
-
-      // 15.5 numeric pre-turn guard (REQ-016) — a stall surfaces to the human; it never judges.
-      const guard = preTurnGuard({ task, taskTurns });
-      if (guard?.escalate) {
-        const answer = await askHuman(guard.question);
-        // route the human's answer back to CODEX (not the worker) via the memo.
-        memo.write(`${memo.read()}\n\n[HUMAN ANSWER to non-progress escalation] ${answer}`);
-        if (/\babort\b/i.test(answer)) {
-          aborted = true; // human's explicit kill switch — not an auto-abort
-          break;
-        }
-      }
-
-      // 15.1 first turn of a task uses the goal; later turns relay codex's message verbatim.
-      const instruction = pendingInstruction ?? renderGoal(task);
-      const snapshot = await snapshotStart();
-      const turn = await runWorkerTurn({ instruction, sessionId });
-      sessionId = turn.sessionId ?? sessionId;
-
-      // 15.2 ground truth -> bounded digest -> codex (no interpretation here).
-      const groundTruth = await collect(snapshot);
-      observeProgress(groundTruth); // REQ-016 — feed the mechanical stall counter
-      const { json: evidenceJson, digest } = buildDigest({ turn, groundTruth, task, turnIndex });
-      // assemblePrompt may be async (it collects the bounded project map) — await tolerates both.
-      const instructions = await assemblePrompt({ goal: renderGoal(task), memo: memo.read() });
-      const { decision } = await decide({ instructions, evidenceJson });
-
-      // 15.3 persist memo regardless of verdict (escalations carry it forward too).
-      memo.write(decision.updated_memo ?? '');
-      logTurn({
-        turnIndex,
-        workerStream: turn,
-        groundTruth,
-        evidenceDigest: digest,
-        codexPrompt: instructions,
-        codexDecision: decision,
-      });
-
-      const action = route(decision);
-      switch (action.kind) {
-        case 'continue':
-        case 'redirect':
-          pendingInstruction = action.message; // relayed verbatim
-          break;
-        case 'task_complete':
-          await setStatus(task.id, 'done'); // 15.4 — on codex's word, not ours
-          advanced = true;
-          break;
-        case 'escalate': {
-          const answer = await askHuman(action.question);
-          // route the human's answer back to CODEX (not the worker) via the memo.
-          memo.write(`${memo.read()}\n\n[HUMAN ANSWER to escalation: ${action.question}] ${answer}`);
-          break;
-        }
-        case 'abort':
-          aborted = true; // 15.4
-          break;
-      }
-
-      // Numeric turn cap — escalate rather than spin (the only other loop-side branch).
-      if (!advanced && !aborted && taskTurns >= maxTurnsPerTask) {
-        const answer = await askHuman(`Turn cap (${maxTurnsPerTask}) reached on task ${task.id}. Continue or abort?`);
-        if (/abort/i.test(answer)) aborted = true;
-        else taskTurns = 0;
-      }
+    turns += 1;
+    if (turns > maxTurns) {
+      const ans = await askHuman(`Turn cap (${maxTurns}) reached without project completion. Continue or abort?`);
+      if (/\babort\b/i.test(ans)) return { reason: 'abort', turns };
+      turns = 1;
     }
 
-    if (aborted) return { reason: 'abort', turns: turnIndex };
+    const snapshot = await snapshotStart();
+    const turn = await runWorkerTurn({ instruction, sessionId });
+    sessionId = turn.sessionId ?? sessionId;
+
+    const groundTruth = await collect(snapshot);
+    observeProgress(groundTruth);
+    const report = classifyReport(turn.finalText);
+    logTurn({ turnIndex: turns, workerStream: turn, groundTruth, report });
+
+    // Mechanical stall guard (free, no LLM) — surfaces a spin to the human, never judges.
+    const stall = stallGuard();
+    if (stall?.escalate) {
+      const ans = await askHuman(stall.question);
+      memo.write(`${memo.read()}\n\n[HUMAN — ${stall.question}] ${ans}`);
+      if (/\babort\b/i.test(ans)) return { reason: 'abort', turns };
+      instruction = ans || continueInstruction;
+      continue;
+    }
+
+    switch (report.status) {
+      case 'done':
+        return { reason: 'done', turns }; // wrapper runs the final whole-project acceptance
+
+      case 'working':
+        instruction = continueInstruction; // NO codex
+        break;
+
+      case 'blocked': {
+        const action = await decideBlock({ question: report.detail, groundTruth });
+        if (action.kind === 'abort') return { reason: 'abort', turns };
+        if (action.kind === 'escalate') {
+          const ans = await askHuman(action.question);
+          memo.write(`${memo.read()}\n\n[HUMAN ANSWER — ${action.question}] ${ans}`);
+          instruction = ans; // relay the human's answer to the worker so it can proceed
+        } else {
+          instruction = action.message; // codex answered the block — relay verbatim
+        }
+        break;
+      }
+
+      case 'checkpoint': {
+        const v = await verifyCheckpoint({ checkpoint: report.detail, groundTruth });
+        onCheckpoint({ checkpoint: report.detail, decision: v });
+        memo.write(`${memo.read()}\n\n[CHECKPOINT "${report.detail}" ${v.accept ? 'PASSED' : 'REJECTED'}] ${v.report ?? ''}`);
+        if (v.accept) {
+          sessionId = null; // fresh worker session per phase — bounds the transcript (token)
+          instruction = `Checkpoint "${report.detail}" was verified and PASSED. Proceed to the next phase / checkpoint per the PRD.`;
+        } else {
+          const fixes = (v.fix_tasks ?? []).map((f, i) => `${i + 1}. ${f.title}: ${f.description}`).join('\n');
+          instruction = `Checkpoint "${report.detail}" did NOT pass review:\n${v.report ?? ''}\nFix the following, then report again:\n${fixes}`;
+        }
+        break;
+      }
+    }
   }
 }

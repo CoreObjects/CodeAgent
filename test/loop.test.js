@@ -1,27 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runLoop } from '../src/loop.js';
+import { classifyWorkerReport } from '../src/worker-report.js';
 
-// REQ-008: per-turn control loop. Pure orchestration — the only loop-side branches
-// are turn-completion (inside runWorkerTurn), the verdict switch, and numeric guards
-// that escalate. No deviation taxonomy. All collaborators are injected as fakes.
+// v4: phase-driven loop. The worker self-reports via STATUS; routing is
+// mechanical. codex (verifyCheckpoint / decideBlock) is invoked ONLY at
+// checkpoints and blocks — never on a plain WORKING turn.
 
-function makeDeps(decisions, { tasks = [{ id: '1', title: 'T' }] } = {}) {
-  const calls = { worker: [], setStatus: [], askHuman: [], memoWrites: [], logged: [] };
-  let taskI = 0;
-  let decI = 0;
+function makeDeps(finalTexts, { verifyVerdicts = [], blockActions = [], askAnswer = 'continue', stallGuard } = {}) {
+  const calls = { worker: [], verify: [], block: [], asked: [], checkpoints: [], memoWrites: [] };
+  let wi = 0;
+  let vi = 0;
+  let bi = 0;
   let memoContent = '';
+  const next = (arr, i, dflt) => (i < arr.length ? arr[i] : dflt);
   const deps = {
-    nextTask: async () => (taskI < tasks.length ? tasks[taskI++] : null),
-    setStatus: async (id, status) => calls.setStatus.push([id, status]),
-    runWorkerTurn: async ({ instruction }) => {
-      calls.worker.push(instruction);
-      return { sessionId: 's1', finalText: 'did stuff' };
+    runWorkerTurn: async ({ instruction, sessionId }) => {
+      calls.worker.push({ instruction, sessionId });
+      return { sessionId: 's1', finalText: next(finalTexts, wi++, '') };
     },
-    snapshotStart: async () => ({ head: 'h0' }),
+    classifyReport: classifyWorkerReport,
+    snapshotStart: async () => ({ head: 'h' }),
     collect: async () => ({ changedFiles: [] }),
-    buildDigest: () => ({ json: '{}', digest: {} }),
-    decide: async () => ({ decision: decisions[decI++] }),
+    observeProgress: () => {},
+    stallGuard: stallGuard ?? (() => null),
+    verifyCheckpoint: async ({ checkpoint }) => {
+      calls.verify.push(checkpoint);
+      return next(verifyVerdicts, vi++, { accept: true, report: 'ok', fix_tasks: [] });
+    },
+    decideBlock: async ({ question }) => {
+      calls.block.push(question);
+      return next(blockActions, bi++, { kind: 'redirect', message: 'do X' });
+    },
     memo: {
       read: () => memoContent,
       write: (m) => {
@@ -29,169 +39,78 @@ function makeDeps(decisions, { tasks = [{ id: '1', title: 'T' }] } = {}) {
         calls.memoWrites.push(m);
       },
     },
-    assemblePrompt: () => 'CODEX_PROMPT',
-    renderGoal: (task) => `goal:${task.id}`,
-    logTurn: (d) => calls.logged.push(d),
     askHuman: async (q) => {
-      calls.askHuman.push(q);
-      return 'continue';
+      calls.asked.push(q);
+      return askAnswer;
     },
+    onCheckpoint: (c) => calls.checkpoints.push(c),
+    beginInstruction: 'BEGIN: implement the PRD phase by phase.',
   };
   return { deps, calls };
 }
 
-test('runs turns until task_complete, marks done, advances, then ends', async () => {
-  const { deps, calls } = makeDeps([
-    { verdict: 'continue', message_to_claude: 'keep going', updated_memo: 'm1' },
-    { verdict: 'task_complete', updated_memo: 'm2' },
-  ]);
+test('PROJECT_COMPLETE returns done immediately (final review is the wrapper)', async () => {
+  const { deps, calls } = makeDeps(['built everything.\nSTATUS: PROJECT_COMPLETE']);
   const r = await runLoop(deps);
   assert.equal(r.reason, 'done');
-  assert.equal(calls.worker.length, 2);
-  assert.equal(calls.worker[0], 'goal:1'); // first turn instruction = the task goal
-  assert.equal(calls.worker[1], 'keep going'); // second turn = relayed continue message
-  assert.deepEqual(calls.setStatus, [['1', 'done']]);
+  assert.equal(calls.verify.length, 0);
 });
 
-test('redirect relays message_to_claude byte-for-byte as the next instruction', async () => {
-  const { deps, calls } = makeDeps([
-    { verdict: 'redirect', message_to_claude: 'rewrite X exactly', updated_memo: 'm' },
-    { verdict: 'task_complete', updated_memo: 'm' },
-  ]);
-  await runLoop(deps);
-  assert.equal(calls.worker[1], 'rewrite X exactly');
-});
-
-test('persists updated_memo every turn (including the continue turn)', async () => {
-  const { deps, calls } = makeDeps([
-    { verdict: 'continue', message_to_claude: 'x', updated_memo: 'memoA' },
-    { verdict: 'task_complete', updated_memo: 'memoB' },
-  ]);
-  await runLoop(deps);
-  assert.ok(calls.memoWrites.includes('memoA'));
-  assert.ok(calls.memoWrites.includes('memoB'));
-});
-
-test('abort exits the loop cleanly with reason=abort', async () => {
-  const { deps } = makeDeps([{ verdict: 'abort', updated_memo: '' }]);
+test('a WORKING turn is auto-continued with NO codex call (the token win)', async () => {
+  const { deps, calls } = makeDeps(['progress.\nSTATUS: WORKING', 'done.\nSTATUS: PROJECT_COMPLETE']);
   const r = await runLoop(deps);
-  assert.equal(r.reason, 'abort');
+  assert.equal(r.reason, 'done');
+  assert.equal(calls.verify.length, 0); // codex never invoked on WORKING
+  assert.equal(calls.block.length, 0);
+  assert.match(calls.worker[1].instruction, /continue/i); // auto-continued
 });
 
-test('escalate asks the human and routes the answer back via the memo, then continues', async () => {
-  const { deps, calls } = makeDeps([
-    { verdict: 'escalate', escalation_question: 'A or B?', updated_memo: 'm' },
-    { verdict: 'task_complete', updated_memo: 'm2' },
-  ]);
-  await runLoop(deps);
-  assert.deepEqual(calls.askHuman, ['A or B?']);
-  assert.ok(calls.memoWrites.some((m) => m.includes('A or B') || m.includes('HUMAN')));
-});
-
-test('logs every turn', async () => {
-  const { deps, calls } = makeDeps([
-    { verdict: 'continue', message_to_claude: 'x', updated_memo: 'm' },
-    { verdict: 'task_complete', updated_memo: 'm' },
-  ]);
-  await runLoop(deps);
-  assert.equal(calls.logged.length, 2);
-});
-
-test('advances across multiple tasks', async () => {
+test('CHECKPOINT_REACHED -> codex verifies; on PASS, resets session and proceeds', async () => {
   const { deps, calls } = makeDeps(
-    [
-      { verdict: 'task_complete', updated_memo: 'a' },
-      { verdict: 'task_complete', updated_memo: 'b' },
-    ],
-    { tasks: [{ id: '1' }, { id: '2' }] },
+    ['engine done.\nSTATUS: CHECKPOINT_REACHED Phase 1 engine', 'all done.\nSTATUS: PROJECT_COMPLETE'],
+    { verifyVerdicts: [{ accept: true, report: 'engine verified', fix_tasks: [] }] },
   );
-  const r = await runLoop(deps);
-  assert.equal(r.reason, 'done');
-  assert.deepEqual(calls.setStatus, [['1', 'done'], ['2', 'done']]);
-});
-
-test('numeric turn cap escalates to the human', async () => {
-  // codex keeps saying continue; the cap must escalate rather than spin forever.
-  const decisions = Array.from({ length: 5 }, () => ({ verdict: 'continue', message_to_claude: 'go', updated_memo: 'm' }));
-  const { deps, calls } = makeDeps(decisions);
-  deps.maxTurnsPerTask = 2;
-  deps.askHuman = async () => 'abort'; // human chooses abort at the cap
-  const r = await runLoop(deps);
-  assert.equal(r.reason, 'abort');
-  assert.ok(calls.worker.length <= 3);
-});
-
-// REQ-016 — the loop feeds each turn's ground truth to the non-progress guard and
-// turns its escalate signal into a human pause routed back to codex (never the worker).
-
-test('feeds each turn ground truth to observeProgress', async () => {
-  const { deps, calls } = makeDeps([
-    { verdict: 'continue', message_to_claude: 'x', updated_memo: 'm' },
-    { verdict: 'task_complete', updated_memo: 'm' },
-  ]);
-  const observed = [];
-  deps.observeProgress = (gt) => observed.push(gt);
   await runLoop(deps);
-  assert.equal(observed.length, 2);
-  assert.deepEqual(observed[0], { changedFiles: [] }); // exactly what collect() returned
+  assert.deepEqual(calls.verify, ['Phase 1 engine']);
+  assert.equal(calls.worker[1].sessionId, null); // fresh session per phase
+  assert.match(calls.worker[1].instruction, /PASSED.*[Pp]roceed/s);
+  assert.ok(calls.memoWrites.some((m) => /PASSED/.test(m)));
+  assert.equal(calls.checkpoints[0].decision.accept, true);
 });
 
-test('pre-turn guard escalation routes the human answer back to codex via the memo, not the worker', async () => {
-  const { deps, calls } = makeDeps([{ verdict: 'task_complete', updated_memo: 'm' }]);
-  let fired = false;
-  deps.preTurnGuard = () => (fired ? null : ((fired = true), { escalate: true, question: 'Stalled — continue?' }));
-  deps.askHuman = async (q) => {
-    calls.askHuman.push(q);
-    return 'try a different approach';
-  };
+test('CHECKPOINT_REACHED -> on REJECT, relays the required fixes and keeps the session', async () => {
+  const { deps, calls } = makeDeps(
+    ['claims done.\nSTATUS: CHECKPOINT_REACHED Phase 1', 'fixed.\nSTATUS: PROJECT_COMPLETE'],
+    { verifyVerdicts: [{ accept: false, report: 'sum is mocked', fix_tasks: [{ title: 'implement sum for real', description: 'no mock' }] }] },
+  );
   await runLoop(deps);
-  assert.deepEqual(calls.askHuman, ['Stalled — continue?']);
-  // answer went into the memo (codex's channel)...
-  assert.ok(calls.memoWrites.some((m) => m.includes('try a different approach')));
-  // ...and NOT into the worker's instruction stream.
-  assert.ok(!calls.worker.some((w) => w.includes('try a different approach')));
+  assert.match(calls.worker[1].instruction, /did NOT pass/i);
+  assert.match(calls.worker[1].instruction, /implement sum for real/);
+  assert.equal(calls.worker[1].sessionId, 's1'); // same session — resume fixing
 });
 
-test('pre-turn guard escalation honoring an explicit abort stops the loop before running the worker', async () => {
-  const { deps, calls } = makeDeps([{ verdict: 'task_complete', updated_memo: 'm' }]);
-  deps.preTurnGuard = () => ({ escalate: true, question: 'Stalled hard — continue or abort?' });
-  deps.askHuman = async () => 'abort please';
+test('BLOCKED -> codex answers (redirect) relays the answer to the worker', async () => {
+  const { deps, calls } = makeDeps(
+    ['STATUS: BLOCKED: even or isEven?', 'STATUS: PROJECT_COMPLETE'],
+    { blockActions: [{ kind: 'redirect', message: 'use isEven' }] },
+  );
+  await runLoop(deps);
+  assert.deepEqual(calls.block, ['even or isEven?']);
+  assert.equal(calls.worker[1].instruction, 'use isEven');
+});
+
+test('BLOCKED -> escalate asks the human and relays the answer to the worker', async () => {
+  const { deps, calls } = makeDeps(
+    ['STATUS: BLOCKED: pick A or B', 'STATUS: PROJECT_COMPLETE'],
+    { blockActions: [{ kind: 'escalate', question: 'A or B?' }], askAnswer: 'B' },
+  );
+  await runLoop(deps);
+  assert.deepEqual(calls.asked, ['A or B?']);
+  assert.equal(calls.worker[1].instruction, 'B');
+});
+
+test('stall guard escalates; an "abort" answer stops the loop', async () => {
+  const { deps } = makeDeps(['STATUS: WORKING'], { stallGuard: () => ({ escalate: true, question: 'stalled?' }), askAnswer: 'abort' });
   const r = await runLoop(deps);
   assert.equal(r.reason, 'abort');
-  assert.equal(calls.worker.length, 0); // aborted at the guard, before the worker ran
-});
-
-test('starts a fresh worker session per task (resets sessionId) to bound token growth', async () => {
-  const { deps } = makeDeps(
-    [
-      { verdict: 'continue', message_to_claude: 'go', updated_memo: 'm' },
-      { verdict: 'task_complete', updated_memo: 'm' },
-      { verdict: 'continue', message_to_claude: 'go', updated_memo: 'm' },
-      { verdict: 'task_complete', updated_memo: 'm' },
-    ],
-    { tasks: [{ id: '1' }, { id: '2' }] },
-  );
-  const seen = [];
-  deps.runWorkerTurn = async ({ sessionId }) => {
-    seen.push(sessionId);
-    return { sessionId: 's1', finalText: 'x' };
-  };
-  await runLoop(deps);
-  assert.deepEqual(seen, [null, 's1', null, 's1']); // fresh at each task's first turn, continued within a task
-});
-
-test('calls onTaskStart once per task with an incrementing index (for the live reporter)', async () => {
-  const { deps } = makeDeps(
-    [
-      { verdict: 'task_complete', updated_memo: 'a' },
-      { verdict: 'task_complete', updated_memo: 'b' },
-    ],
-    { tasks: [{ id: '1' }, { id: '2' }] },
-  );
-  const starts = [];
-  deps.onTaskStart = (x) => starts.push(x);
-  await runLoop(deps);
-  assert.equal(starts.length, 2);
-  assert.deepEqual(starts.map((s) => s.taskIndex), [1, 2]);
-  assert.equal(starts[0].task.id, '1');
 });
