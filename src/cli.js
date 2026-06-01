@@ -48,7 +48,7 @@ export function slugFromPrd(prdText, fallbackName = 'project') {
 
 /** Parse the command's argv (everything after the script name). */
 export function parseSupervArgs(argv) {
-  const out = { prd: null, out: null, num: '15 to 25', limit: 0, test: null, quiet: false, decompose: true };
+  const out = { prd: null, out: null, num: '15 to 25', limit: 0, test: null, quiet: false, decompose: true, model: null, effort: null };
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -58,6 +58,8 @@ export function parseSupervArgs(argv) {
     else if (a === '--num') out.num = argv[++i];
     else if (a === '--limit') out.limit = Number(argv[++i]) || 0;
     else if (a === '--test') out.test = String(argv[++i]).trim().split(/\s+/).filter(Boolean);
+    else if (a === '--model') out.model = argv[++i];
+    else if (a === '--effort') out.effort = argv[++i];
     else if (!a.startsWith('--')) positionals.push(a);
   }
   out.prd = positionals[0] ?? null;
@@ -133,7 +135,7 @@ export async function runSuperv({
 } = {}) {
   const opts = parseSupervArgs(argv);
   if (!opts.prd) {
-    throw new Error('usage: prd2code <prd.md> [dir] [--out dir] [--num "20 to 26"] [--limit N] [--test "<cmd>"] [--quiet] [--no-decompose]');
+    throw new Error('usage: prd2code <prd.md> [dir] [--out dir] [--num "20 to 26"] [--limit N] [--test "<cmd>"] [--model sonnet] [--effort high] [--quiet] [--no-decompose]');
   }
 
   const prdPath = path.resolve(cwd, opts.prd);
@@ -164,6 +166,8 @@ export async function runSuperv({
         env: sanitizeEnv(env),
         num: opts.num,
         runProcess,
+        model: opts.model || 'sonnet',
+        effort: opts.effort || 'high',
       });
     } catch (err) {
       // Persist claude's raw output for diagnosis, and clean up the freshly
@@ -192,10 +196,13 @@ export async function runSuperv({
   }
 
   const rep = reporter ?? createConsoleReporter({ quiet: opts.quiet });
+  const configOverride = { testCommand: opts.test, logDir: path.join(outDir, 'runs') };
+  if (opts.model) configOverride.claudeModel = opts.model;
+  if (opts.effort) configOverride.claudeEffort = opts.effort;
   const result = await runMain({
     cwd: outDir,
     baseEnv: env,
-    configOverride: { testCommand: opts.test, logDir: path.join(outDir, 'runs') },
+    configOverride,
     reporter: rep,
     totalTasks: total,
     askHuman: askHuman ?? consoleAskHuman,
@@ -245,7 +252,8 @@ function assertProject(dir) {
  * they are resuming so they survey the existing code before continuing.
  */
 export async function runResume({ argv = [], cwd = process.cwd(), runProcess = defaultRunProcess, baseEnv = process.env, reporter, askHuman } = {}) {
-  const dir = path.resolve(cwd, argv[0] ?? '.');
+  const opts = parseSupervArgs(argv); // reuse flag parsing; positional[0] is the dir
+  const dir = path.resolve(cwd, opts.prd ?? '.');
   if (!fs.existsSync(path.join(dir, '.taskmaster'))) throw new Error(`not a prd2code project (no .taskmaster/): ${dir}`);
   const prdInRepo = path.join(dir, '.taskmaster', 'docs', 'prd.md');
   if (!fs.existsSync(prdInRepo)) throw new Error(`no PRD at ${prdInRepo} — cannot resume`);
@@ -258,7 +266,7 @@ export async function runResume({ argv = [], cwd = process.cwd(), runProcess = d
   if (!tasks.length) {
     const bins = await resolveAllBinaries(validateConfig({}), runProcess);
     console.error('[prd2code] no tasks yet — finishing decomposition before resuming…');
-    const tj = await decomposePrd({ prdPath: prdInRepo, claudeBin: bins.claude, env: sanitizeEnv(env), runProcess });
+    const tj = await decomposePrd({ prdPath: prdInRepo, claudeBin: bins.claude, env: sanitizeEnv(env), runProcess, model: opts.model || 'sonnet', effort: opts.effort || 'high' });
     fs.mkdirSync(path.dirname(tasksPath), { recursive: true });
     fs.writeFileSync(tasksPath, JSON.stringify(tj, null, 2), 'utf8');
     tasks = tj.master.tasks;
@@ -267,10 +275,13 @@ export async function runResume({ argv = [], cwd = process.cwd(), runProcess = d
   const doneN = tasks.filter((t) => t.status === 'done').length;
   console.error(`[prd2code] resuming ${dir} — ${doneN}/${total} tasks done.\n`);
 
+  const configOverride = { logDir: path.join(dir, 'runs') };
+  if (opts.model) configOverride.claudeModel = opts.model;
+  if (opts.effort) configOverride.claudeEffort = opts.effort;
   const result = await runMain({
     cwd: dir,
     baseEnv: env,
-    configOverride: { logDir: path.join(dir, 'runs') },
+    configOverride,
     reporter: reporter ?? createConsoleReporter({}),
     askHuman: askHuman ?? consoleAskHuman,
     totalTasks: total,

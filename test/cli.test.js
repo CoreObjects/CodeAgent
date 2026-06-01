@@ -41,6 +41,15 @@ test('parseSupervArgs: flags are parsed and --test is split into argv', () => {
   assert.equal(o.num, '5 to 8');
 });
 
+test('parseSupervArgs: --model and --effort are optional flags (null when absent)', () => {
+  const o = parseSupervArgs(['./prd.md', '--model', 'opus', '--effort', 'max']);
+  assert.equal(o.model, 'opus');
+  assert.equal(o.effort, 'max');
+  const none = parseSupervArgs(['./prd.md']);
+  assert.equal(none.model, null);
+  assert.equal(none.effort, null);
+});
+
 test('parseSupervArgs: a second positional is the target dir', () => {
   const o = parseSupervArgs(['./prd.md', './target']);
   assert.equal(o.prd, './prd.md');
