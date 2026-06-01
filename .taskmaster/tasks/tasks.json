@@ -1081,68 +1081,74 @@
         "dependencies": [
           "15"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Console pause and delimited question print",
             "description": "Pause the loop on escalate and print codex's escalation_question in a delimited console block.",
             "details": "Satisfies REQ-011 for parent task 16. When the router returns the escalate tagged action, halt the loop's progress, print a delimited block (clear top/bottom rules) containing codex's escalation_question and the escalation_category for context. Make the prompt unmistakable in a long log stream so the user does not miss it. No worker turn occurs while paused.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Integration test triggers an escalation verdict and asserts the loop pauses and the delimited block appears with the question text.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:23:41.486Z"
           },
           {
             "id": 2,
             "title": "Blocking input capture",
             "description": "Block on typed input from the human and return the answer to the loop.",
             "details": "Satisfies REQ-011 for parent task 16. Read from stdin synchronously (or via readline interface) until the human submits an answer; trim trailing newline; return the raw string to the caller. No timeout — the loop intentionally yields fully to the human here. Empty input is permitted; codex will decide how to handle it on the next turn.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Integration test feeds a piped answer to stdin and asserts the captured string matches exactly.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:23:41.495Z"
           },
           {
             "id": 3,
             "title": "Route answer back through codex (not worker)",
             "description": "Inject the human's answer into the next codex prompt rather than directly to the worker.",
             "details": "Satisfies REQ-011 for parent task 16. The next loop iteration assembles a codex prompt that includes the human answer as a designated section under a fixed delimiter, so codex remains the sole decider. Never relay the answer to the worker. This preserves the design invariant from User Story 3.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
             "testStrategy": "Integration test asserts the next codex prompt contains the answer in the designated section and the worker never receives the answer text.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:23:41.501Z"
           },
           {
             "id": 4,
             "title": "Transcript recording of question and answer",
             "description": "Record the escalation question and the human answer in the per-turn transcript.",
             "details": "Satisfies REQ-011 for parent task 16. Append both fields to REQ-013's per-turn artifact for the turn where the escalation fired and the turn that resumed with the answer. This makes the audit trail complete per User Story 4 acceptance criteria. Apply REQ-013's redaction to both fields.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2
             ],
             "testStrategy": "Integration test asserts the recorded transcript contains both fields under the right turns with token-shape redaction applied.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:23:41.507Z"
           },
           {
             "id": 5,
             "title": "Optional desktop notification with fallback",
             "description": "Fire a desktop notification on escalation, degrading silently to console-only when unavailable.",
             "details": "Satisfies REQ-011 for parent task 16. Use node-notifier (optional dep) to fire a one-line notification when escalation triggers, so the user can step away during a long run. Wrap in try/catch so notifier failures (missing dep, headless env) degrade silently to console-only. Do not block the loop on notifier outcome.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test asserts the notifier path is invoked and a failure in the notifier does not affect the pause/capture/resume sequence.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:23:41.513Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T06:23:41.513Z"
       },
       {
         "id": "17",
@@ -1155,56 +1161,61 @@
           "15",
           "16"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Mechanical no-change counter",
             "description": "Maintain a counter that increments only on turns with empty changed-file list and unchanged test exit code.",
             "details": "Satisfies REQ-016 for parent task 17. After each turn, inspect the REQ-004 ground truth: if changed_files is empty AND test_exit_code is unchanged from the prior turn, increment the counter. Otherwise, leave it for the reset step. The guard reads only ground-truth fields, never interprets claims, and never judges correctness.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit test feeds two no-change turns in a row and asserts the counter reaches 2.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:28:14.277Z"
           },
           {
             "id": 2,
             "title": "Counter reset on any change",
             "description": "Reset the counter on any turn with a non-empty changed-file list or changed test exit code.",
             "details": "Satisfies REQ-016 for parent task 17. The reset is mechanical and unconditional whenever progress is observed in ground truth. This prevents the threshold from accumulating across genuine progress patches separated by no-change turns. Pair with subtask 1's increment logic into a single update function.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test feeds no-change → change → no-change and asserts the counter is 1 at the end, not 2.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:28:14.285Z"
           },
           {
             "id": 3,
             "title": "Threshold escalate via REQ-011",
             "description": "At the configured threshold escalate through the REQ-011 channel and take no other action.",
             "details": "Satisfies REQ-016 for parent task 17. When the counter reaches the configured threshold (default 3) trigger REQ-011's escalation channel with a question synthesized by the guard (e.g., \"3 consecutive turns made no changes — continue, abort, or redirect?\") and route the answer back to codex like any other escalation. Never auto-abort, never judge correctness.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1,
               2
             ],
             "testStrategy": "Integration test pushes the counter to the threshold and asserts escalation fires exactly once with no other side effects.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:28:14.289Z"
           },
           {
             "id": 4,
             "title": "Guard regression tests",
             "description": "Author the regression suite covering increment, reset, and threshold behaviors.",
             "details": "Satisfies REQ-016 for parent task 17. Cases: increment on no-change, reset on change, single escalation fire at threshold, no double-fire across consecutive overcap turns. Locks in the design that the guard is a pure numeric safety branch per REQ-008.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
             "testStrategy": "Run the suite; gate task 17 on all four behaviors passing.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:28:14.294Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T06:28:14.294Z"
       },
       {
         "id": "18",
@@ -1217,56 +1228,61 @@
           "5",
           "8"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Failure signature classifier",
             "description": "Classify failure signatures from both the worker (REQ-003) and the supervisor (REQ-006).",
             "details": "Satisfies REQ-017 for parent task 18. Inspect exit codes, stderr fragments, and result-event errors to bucket failures into { auth_refresh, rate_limit, other }. Auth-refresh signatures include OAuth token-renewal messages from claude or codex; rate-limit signatures match 429-style responses. The classifier is the single source of truth used by both retry paths.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Unit tests inject simulated stderr fragments for each bucket and assert the classifier returns the correct label.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:31:15.232Z"
           },
           {
             "id": 2,
             "title": "Auth-refresh single retry",
             "description": "On an auth-refresh failure retry the same turn exactly once with no API-key injection.",
             "details": "Satisfies REQ-017 for parent task 18. Re-invoke the same turn (worker via REQ-003 or supervisor via REQ-006) once, relying on the agent's own subscription token refresh — never inject an API key into the env (REQ-012 sanitization stays intact). If the second attempt fails the failure cap path takes over via subtask 4.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test simulates one auth-refresh failure and asserts exactly one retry occurred with sanitized env still in effect.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:31:15.240Z"
           },
           {
             "id": 3,
             "title": "Capped exponential backoff for rate limits",
             "description": "Apply capped exponential backoff on rate-limit responses.",
             "details": "Satisfies REQ-017 for parent task 18. Schedule retries with delays doubling from a base (e.g., 5s → 10s → 20s) up to a configured cap (e.g., 5 minutes). Honor any Retry-After header value when present by clamping to it. Log each backoff scheduling so the audit shows why the loop is paused.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Unit test simulates repeated rate-limit failures and asserts the backoff schedule doubles up to the cap and respects Retry-After.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:31:15.245Z"
           },
           {
             "id": 4,
             "title": "Escalate past failure cap",
             "description": "After a configured number of failures escalate via REQ-011 rather than spinning indefinitely.",
             "details": "Satisfies REQ-017 for parent task 18. Track total transient failures per turn; past the cap (default 5) call the REQ-011 escalation channel with a synthesized question summarizing the failure pattern and let the human decide continue/abort/redirect through codex. This guarantees the loop never silently churns forever.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2,
               3
             ],
             "testStrategy": "Integration test pushes past the failure cap and asserts escalation fires with the failure summary; no further retries occur.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:31:15.249Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-05-30T06:31:15.249Z"
       },
       {
         "id": "19",
@@ -1280,76 +1296,82 @@
           "17",
           "18"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
             "title": "Scratch PRD and repo setup",
             "description": "Prepare a throwaway PRD and a scratch git repository for the milestone run.",
             "details": "Closes Phase 5 and verifies all P0/P1 requirements for parent task 19. Author a small PRD covering at least three implementable tasks; init a scratch git repo (separate from this project); parse-prd via the REQ-019 verified script. Confirm subscription-auth probe success (REQ-012, REQ-019) before the run begins. The scratch context isolates the run from the production repo.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "testStrategy": "Setup script produces a scratch repo with a parsed tasks.json containing ≥3 pending tasks and a passing subscription-auth probe.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:43:16.539Z"
           },
           {
             "id": 2,
             "title": "Run loop across three sequential tasks",
             "description": "Execute the closed-loop run across at least three tasks with human input only on escalations.",
             "details": "Closes Phase 5 for parent task 19. Drive REQ-008's loop across the scratch tasks; verify the loop advances on task_complete via REQ-010 set-status; record per-turn transcripts via REQ-013. Confirm no human input on non-escalation turns per User Story 1. The run exercises every Phase 1–4 module end-to-end.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Run gates on (a) ≥3 tasks reaching task_complete, (b) zero human prompts outside escalations, (c) transcripts on disk for every turn.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-01T07:35:42.261Z"
           },
           {
             "id": 3,
             "title": "Injected false-done drill",
             "description": "Cause the worker to claim completion with no diff or failing tests and assert codex catches it.",
             "details": "Closes Phase 5 for parent task 19. Inject a prompt that nudges the worker to claim done without changing files (or while tests fail); assert codex returns fake_done_flag=true with at least one cited evidence item from REQ-005 facts and the loop does not mark the task done (REQ-008). This is the headline acceptance gate from Goal 2.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
             "testStrategy": "Drill asserts fake_done_flag=true, ≥1 cited_evidence item, and task status is NOT set to done by REQ-010.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:43:16.547Z"
           },
           {
             "id": 4,
             "title": "Escalation round-trip drill",
             "description": "Exercise the REQ-011 escalation channel with a whitelisted high-stakes prompt.",
             "details": "Closes Phase 5 for parent task 19. Craft a prompt that triggers a category in the REQ-014 escalation whitelist (e.g., an irreversible operation); assert the loop pauses, the question reaches the console, the typed answer routes back to codex (not the worker), and the run resumes with codex's re-decision. Confirm transcript records both halves.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
             "testStrategy": "Drill asserts loop pause, answer routed into next codex prompt (not worker prompt), and transcript contains question+answer pair.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-05-30T06:43:16.553Z"
           },
           {
             "id": 5,
             "title": "Zero-API-call and complete-transcript audit",
             "description": "Verify provider dashboards show 0 API calls and a complete per-turn transcript exists.",
             "details": "Closes Phase 5 for parent task 19. After the run check Anthropic and OpenAI dashboards for the run window and confirm zero API-billed calls (subscription auth held end-to-end per REQ-012 and REQ-019). Walk the per-run directory from REQ-013 and confirm every turn has all five artifacts plus the human-readable summary. This is the final acceptance gate for v1.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2,
               3,
               4
             ],
             "testStrategy": "Audit gates on (a) 0 API calls on both provider dashboards in the run window, (b) every turn has worker_stream.jsonl, ground_truth.json, evidence_digest.json, codex_prompt.txt, codex_decision.json, and a summary section.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-01T07:35:49.309Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-06-01T07:35:49.309Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-05-30T06:09:45.237Z",
+      "lastModified": "2026-06-01T07:35:49.309Z",
       "taskCount": 19,
-      "completedCount": 15,
+      "completedCount": 19,
       "tags": [
         "master"
       ]
