@@ -6,7 +6,7 @@ import path from 'node:path';
 import { slugFromPrd, parseSupervArgs, scaffoldRepo } from '../src/cli.js';
 
 // Pure CLI helpers. The IO-heavy runSuperv (scaffold + decompose + run) is
-// covered by the live smoke (`superv docs/test-prd.md --limit 3`), not unit tests.
+// covered by the live smoke (`prd2code docs/test-prd.md --limit 3`), not unit tests.
 
 test('slugFromPrd derives a clean slug from the PRD H1, stripping a PRD: prefix and trailing detail', () => {
   const prd = '# PRD: CasioCalc — Casio fx-82ES PLUS 风格科学计算器（桌面版）\n\nbody...';

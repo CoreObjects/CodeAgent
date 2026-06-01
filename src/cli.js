@@ -1,6 +1,6 @@
-// cli.js — the `superv` command: one shot, PRD in → built code repo out.
+// cli.js — the `prd2code` command: one shot, PRD in → built code repo out.
 //
-//   superv <prd> [out] [--out dir] [--num "20 to 26"] [--limit N]
+//   prd2code <prd> [out] [--out dir] [--num "20 to 26"] [--limit N]
 //          [--test "<cmd>"] [--quiet] [--no-decompose]
 //
 // Zero config: no config file, no test command, no CLAUDE.md required. It
@@ -43,7 +43,7 @@ export function slugFromPrd(prdText, fallbackName = 'project') {
   return slugify(title) || slugify(fallbackName) || 'project';
 }
 
-/** Parse superv's argv (everything after the script name). */
+/** Parse the command's argv (everything after the script name). */
 export function parseSupervArgs(argv) {
   const out = { prd: null, out: null, num: '15 to 25', limit: 0, test: null, quiet: false, decompose: true };
   const positionals = [];
@@ -80,11 +80,11 @@ function writeScaffold(dir) {
 async function gitInitWithBaseline(dir, runProcess) {
   const g = (args) => runProcess('git', args, { cwd: dir });
   await g(['init', '-q']);
-  await g(['config', 'user.name', 'superv-worker']);
-  await g(['config', 'user.email', 'superv@local']);
+  await g(['config', 'user.name', 'prd2code-worker']);
+  await g(['config', 'user.email', 'prd2code@local']);
   await g(['add', '-A']);
   // a baseline commit so HEAD exists for the first ground-truth snapshot
-  await g(['commit', '-q', '-m', 'superv: scaffold repo + PRD']);
+  await g(['commit', '-q', '-m', 'prd2code: scaffold repo + PRD']);
 }
 
 /**
@@ -124,7 +124,7 @@ export async function runSuperv({
 } = {}) {
   const opts = parseSupervArgs(argv);
   if (!opts.prd) {
-    throw new Error('usage: superv <prd.md> [dir] [--out dir] [--num "20 to 26"] [--limit N] [--test "<cmd>"] [--quiet] [--no-decompose]');
+    throw new Error('usage: prd2code <prd.md> [dir] [--out dir] [--num "20 to 26"] [--limit N] [--test "<cmd>"] [--quiet] [--no-decompose]');
   }
 
   const prdPath = path.resolve(cwd, opts.prd);
@@ -146,7 +146,7 @@ export async function runSuperv({
     await scaffoldRepo({ outDir, prdPath, runProcess });
 
     const bins = await resolveAllBinaries(validateConfig({}), runProcess);
-    console.error(`[superv] decomposing ${path.basename(prdPath)} → tasks (this calls claude)…`);
+    console.error(`[prd2code] decomposing ${path.basename(prdPath)} → tasks (this calls claude)…`);
     let tasksJson;
     try {
       tasksJson = await decomposePrd({
@@ -160,10 +160,10 @@ export async function runSuperv({
       // Persist claude's raw output for diagnosis, and clean up the freshly
       // scaffolded dir so the next run isn't blocked by the non-empty guard.
       if (err.rawOutput) {
-        const dbg = path.join(cwd, 'superv-decompose-raw.txt');
+        const dbg = path.join(cwd, 'prd2code-decompose-raw.txt');
         try {
           fs.writeFileSync(dbg, err.rawOutput, 'utf8');
-          err.message += `\n[superv] saved claude's raw output to ${dbg}`;
+          err.message += `\n[prd2code] saved claude's raw output to ${dbg}`;
         } catch {
           /* best effort */
         }
@@ -176,7 +176,7 @@ export async function runSuperv({
     fs.mkdirSync(path.dirname(tp), { recursive: true });
     fs.writeFileSync(tp, JSON.stringify(tasksJson, null, 2), 'utf8');
     total = tasksJson.master.tasks.length;
-    console.error(`[superv] ${total} tasks. Building into ${outDir}\n`);
+    console.error(`[prd2code] ${total} tasks. Building into ${outDir}\n`);
   } else {
     const tj = JSON.parse(fs.readFileSync(path.join(outDir, '.taskmaster', 'tasks', 'tasks.json'), 'utf8'));
     total = tj.master?.tasks?.length ?? 0;

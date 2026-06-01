@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // scripts/milestone.mjs — demo wrapper. Now just runs the real product CLI on the
-// sample PRD; equivalent to `superv docs/test-prd.md`. Kept for muscle memory.
+// sample PRD; equivalent to `prd2code docs/test-prd.md`. Kept for muscle memory.
 //
-//   node scripts/milestone.mjs [--limit 3] [--quiet] [...superv flags]
+//   node scripts/milestone.mjs [--limit 3] [--quiet] [...prd2code flags]
 //
-// Zero config: superv scaffolds the repo, auto-detects the test command, and the
+// Zero config: prd2code scaffolds the repo, auto-detects the test command, and the
 // worker installs its own deps. Spends subscription quota; Ctrl-C anytime.
 
 import { runSuperv } from '../src/cli.js';

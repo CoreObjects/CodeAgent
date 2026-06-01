@@ -28,8 +28,8 @@ runs/
 # Live milestone scratch repo (scaffolded by scripts/milestone.mjs)
 .milestone-scratch/
 
-# superv-generated app repos when run from inside this repo (e.g. the sample PRD)
+# prd2code-generated app repos when run from inside this repo (e.g. the sample PRD)
 /casiocalc/
 
-# superv decompose diagnostics (written on a parse failure)
-superv-decompose-raw.txt
+# prd2code decompose diagnostics (written on a parse failure)
+prd2code-decompose-raw.txt

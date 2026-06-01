@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Supervisor agent: codex (监工) supervises Claude Code (worker) to implement a PRD into code. Thin orchestrator, zero decision logic.",
   "bin": {
-    "superv": "bin/superv.mjs"
+    "prd2code": "bin/prd2code.mjs"
   },
   "scripts": {
     "test": "node --test"
