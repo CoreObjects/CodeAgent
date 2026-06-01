@@ -35,6 +35,7 @@ import { detectTestCommand } from './detect-test.js';
 import { collectProjectMap } from './project-map.js';
 import { buildAcceptancePrompt, runAcceptance, appendFixTasks, generateUsageDoc } from './acceptance.js';
 import { runWithAcceptance } from './finalize.js';
+import { buildLoginGuidance } from './onboarding.js';
 import { route } from './router.js';
 import { runLoop } from './loop.js';
 
@@ -287,9 +288,32 @@ function defaultRunId() {
 }
 
 /**
+ * Resolve config + sanitized env + binaries and assert subscription auth via the
+ * startup probe. Throws a GUIDED login error (never an API-key fallback) if an
+ * agent isn't reachable. Shared by build/resume and verify/docs. Returns
+ * { config, env, binaries, probe }.
+ */
+export async function prepareRun({ cwd = process.cwd(), configOverride = null, baseEnv = process.env, runProcess = defaultRunProcess } = {}) {
+  const config = validateConfig(configOverride ?? loadConfigFile(cwd));
+  const env = sanitizeEnv(baseEnv);
+  const binaries = await resolveAllBinaries(config, runProcess);
+  const probe = await runStartupProbe({ runProcess, claudeBin: binaries.claude, codexBin: binaries.codex, env });
+  if (!probe.claude.ok || !probe.codex.ok) {
+    const err = new Error(buildLoginGuidance({ claudeOk: probe.claude.ok, codexOk: probe.codex.ok }));
+    err.notLoggedIn = true;
+    throw err;
+  }
+  // Provision the worker's per-repo permission boundary if the repo has none
+  // (never clobber an existing one — the repo owns its rules).
+  const settings = ensureWorkerSettings(cwd);
+  if (settings.wrote) console.error(`[prd2code] wrote worker permissions to ${settings.path}`);
+  return { config, env, binaries, probe };
+}
+
+/**
  * CLI entry. Resolves config + binaries, asserts subscription auth via the
- * startup probe, then drives the loop. Throws (refusing to run) if the probe
- * fails — we never fall back to API-key auth.
+ * startup probe, then drives the loop + acceptance. Throws (with login guidance)
+ * if the probe fails — we never fall back to API-key auth.
  */
 export async function runMain({
   runProcess = defaultRunProcess,
@@ -304,35 +328,7 @@ export async function runMain({
   totalTasks = 0,
   runNote = '',
 } = {}) {
-  const config = validateConfig(configOverride ?? loadConfigFile(cwd));
-  const env = sanitizeEnv(baseEnv);
-  const binaries = await resolveAllBinaries(config, runProcess);
-
-  const probe = await runStartupProbe({
-    runProcess,
-    claudeBin: binaries.claude,
-    codexBin: binaries.codex,
-    env,
-  });
-  if (!probe.claude.ok || !probe.codex.ok) {
-    throw new Error(
-      'Startup probe failed — subscription auth is not available for ' +
-        `${!probe.claude.ok ? 'claude ' : ''}${!probe.codex.ok ? 'codex' : ''}`.trim() +
-        '. Refusing to run; this orchestrator never injects an API key.',
-    );
-  }
-
-  // Provision the worker's per-repo permission boundary (allow/deny) if the
-  // target repo has none. We never clobber an existing .claude/settings.json —
-  // if one exists, the repo owns its rules; warn so a weak deny isn't silent.
-  const settings = ensureWorkerSettings(cwd);
-  if (settings.wrote) {
-    console.error(`[orchestrator] wrote worker permissions to ${settings.path}`);
-  } else {
-    console.error(
-      `[orchestrator] kept existing ${settings.path} — ensure it denies destructive commands (rm/find/force-push/reset --hard).`,
-    );
-  }
+  const { config, env, binaries } = await prepareRun({ cwd, configOverride, baseEnv, runProcess });
 
   const { deps, runDir, reviewProject, writeUsageDoc, askHuman: askHumanFn } = buildOrchestrator({
     config,

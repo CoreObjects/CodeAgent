@@ -6,8 +6,11 @@ import { runCli } from '../src/cli.js';
 
 runCli({ argv: process.argv.slice(2) })
   .then((r) => {
-    console.error(`\n[prd2code] ${r.reason}: repo at ${r.outDir}`);
-    console.error(`[prd2code] per-turn transcript: ${r.runDir}`);
+    if (r?.outDir) {
+      console.error(`\n[prd2code] ${r.reason}: repo at ${r.outDir}`);
+      if (r.runDir) console.error(`[prd2code] per-turn transcript: ${r.runDir}`);
+    }
+    if (r && r.ok === false) process.exitCode = 1; // doctor/login/docs not-ready
   })
   .catch((err) => {
     console.error(`[prd2code] ${err.message}`);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
-import { slugFromPrd, parseSupervArgs, scaffoldRepo, parseCommand } from '../src/cli.js';
+import { slugFromPrd, parseSupervArgs, scaffoldRepo, parseCommand, formatStatus } from '../src/cli.js';
 
 // Pure CLI helpers. The IO-heavy runSuperv (scaffold + decompose + run) is
 // covered by the live smoke (`prd2code docs/test-prd.md --limit 3`), not unit tests.
@@ -48,9 +48,20 @@ test('parseSupervArgs: a second positional is the target dir', () => {
 });
 
 test('parseCommand routes known subcommands and defaults to build', () => {
-  assert.deepEqual(parseCommand(['resume', './dir']), { command: 'resume', rest: ['./dir'] });
+  for (const c of ['resume', 'verify', 'docs', 'status', 'doctor', 'report', 'clean', 'login']) {
+    assert.deepEqual(parseCommand([c, './dir']), { command: c, rest: ['./dir'] });
+  }
   assert.deepEqual(parseCommand(['./prd.md']), { command: 'build', rest: ['./prd.md'] });
   assert.deepEqual(parseCommand([]), { command: 'build', rest: [] });
+});
+
+test('formatStatus reports done/total and the next pending task', () => {
+  const s = formatStatus([{ id: '1', title: 'A', status: 'done' }, { id: '2', title: 'B', status: 'pending' }, { id: '3', title: 'C', status: 'pending' }]);
+  assert.match(s, /1\/3/);
+  assert.match(s, /next: #2 B/);
+  const allDone = formatStatus([{ id: '1', status: 'done' }]);
+  assert.match(allDone, /1\/1/);
+  assert.match(allDone, /complete/i);
 });
 
 test('scaffoldRepo lays down the PRD + scaffold + worker settings, creating .taskmaster/docs (regression)', async () => {

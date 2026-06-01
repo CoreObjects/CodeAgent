@@ -17,7 +17,10 @@ import { resolveAllBinaries, sanitizeEnv, validateConfig } from './config.js';
 import { decomposePrd } from './decompose.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { createConsoleReporter } from './reporter.js';
-import { runMain } from './main.js';
+import { runMain, prepareRun, buildOrchestrator } from './main.js';
+import { generateUsageDoc } from './acceptance.js';
+import { runPreflight } from './preflight.js';
+import { buildLoginGuidance } from './onboarding.js';
 
 // --- pure helpers (unit-tested) ------------------------------------------
 
@@ -202,7 +205,7 @@ export async function runSuperv({
 
 // --- subcommand dispatch -------------------------------------------------
 
-const SUBCOMMANDS = new Set(['resume']);
+const SUBCOMMANDS = new Set(['resume', 'verify', 'docs', 'status', 'doctor', 'report', 'clean', 'login']);
 
 /** Route argv to a subcommand, defaulting to `build` (a bare PRD path). Pure. */
 export function parseCommand(argv) {
@@ -217,6 +220,22 @@ function readTasks(tasksPath) {
   } catch {
     return [];
   }
+}
+
+/** One-line progress summary from a task list. Pure. */
+export function formatStatus(tasks) {
+  const total = tasks.length;
+  const done = tasks.filter((t) => t.status === 'done').length;
+  const current = tasks.find((t) => t.status !== 'done');
+  const head = `Progress: ${done}/${total} tasks done`;
+  return current ? `${head}; next: #${current.id} ${current.title ?? ''}`.trimEnd() : `${head} — all complete`;
+}
+
+function projectDir(argv, cwd) {
+  return path.resolve(cwd, argv[0] ?? '.');
+}
+function assertProject(dir) {
+  if (!fs.existsSync(path.join(dir, '.taskmaster'))) throw new Error(`not a prd2code project (no .taskmaster/): ${dir}`);
 }
 
 /**
@@ -261,9 +280,122 @@ export async function runResume({ argv = [], cwd = process.cwd(), runProcess = d
   return { ...result, outDir: dir };
 }
 
+/** status <dir> — read tasks.json, print progress. No quota. */
+export async function runStatus({ argv = [], cwd = process.cwd() } = {}) {
+  const dir = projectDir(argv, cwd);
+  const tasks = readTasks(path.join(dir, '.taskmaster', 'tasks', 'tasks.json'));
+  console.error(`[prd2code] ${dir}`);
+  console.error(tasks.length ? formatStatus(tasks) : 'no tasks yet (decomposition not finished)');
+  return { reason: 'status' };
+}
+
+/** doctor — preflight: python, binaries, subscription auth. No tasks run. */
+export async function runDoctor({ runProcess = defaultRunProcess } = {}) {
+  console.error('[prd2code] doctor:');
+  try {
+    const pre = await runPreflight({ runProcess });
+    console.error(`  python : ${pre.python?.command ?? '?'} ${pre.python?.version ?? ''}`);
+    console.error(`  claude : ${pre.probe.claude.ok ? 'OK (subscription)' : 'NOT logged in'}  ${pre.binaries?.claude ?? ''}`);
+    console.error(`  codex  : ${pre.probe.codex.ok ? 'OK (subscription)' : 'NOT logged in'}  ${pre.binaries?.codex ?? ''}`);
+    if (pre.ok) console.error('  ✓ ready');
+    else console.error('\n' + buildLoginGuidance({ claudeOk: pre.probe.claude.ok, codexOk: pre.probe.codex.ok }));
+    return { reason: 'doctor', ok: pre.ok };
+  } catch (err) {
+    console.error(`  preflight failed: ${err.message}`);
+    return { reason: 'doctor', ok: false };
+  }
+}
+
+/** login — show auth status and the exact (subscription, no-API-key) login steps. */
+export async function runLogin({ runProcess = defaultRunProcess } = {}) {
+  const pre = await runPreflight({ runProcess }).catch(() => null);
+  const claudeOk = pre?.probe?.claude?.ok ?? false;
+  const codexOk = pre?.probe?.codex?.ok ?? false;
+  if (claudeOk && codexOk) {
+    console.error('[prd2code] already signed in (claude + codex, subscription). You are ready.');
+    return { reason: 'login', ok: true };
+  }
+  console.error(buildLoginGuidance({ claudeOk, codexOk }));
+  return { reason: 'login', ok: false };
+}
+
+/** clean <dir> — remove orchestrator state (.prd2code/, runs/) so a run can restart clean. */
+export async function runClean({ argv = [], cwd = process.cwd() } = {}) {
+  const dir = projectDir(argv, cwd);
+  const removed = [];
+  for (const sub of ['.prd2code', 'runs']) {
+    const p = path.join(dir, sub);
+    if (fs.existsSync(p)) {
+      fs.rmSync(p, { recursive: true, force: true });
+      removed.push(sub);
+    }
+  }
+  console.error(`[prd2code] cleaned ${removed.length ? removed.join(', ') : 'nothing'} in ${dir}`);
+  return { reason: 'clean' };
+}
+
+/** verify <dir> — codex deep-reviews the whole project and prints the report. */
+export async function runVerify({ argv = [], cwd = process.cwd(), runProcess = defaultRunProcess, baseEnv = process.env, askHuman } = {}) {
+  const dir = projectDir(argv, cwd);
+  assertProject(dir);
+  process.env.PYTHONUTF8 = '1';
+  const { config, env, binaries } = await prepareRun({ cwd: dir, configOverride: { logDir: path.join(dir, 'runs') }, baseEnv: { ...baseEnv, PYTHONUTF8: '1' }, runProcess });
+  const { reviewProject } = buildOrchestrator({ config, binaries, cwd: dir, env, runId: 'verify', runProcess, askHuman });
+  console.error('[prd2code] running whole-project acceptance review…');
+  const { decision } = await reviewProject();
+  console.error(`\n[prd2code] acceptance: ${decision.accept ? 'ACCEPTED ✓' : 'REJECTED ✗'}`);
+  if (decision.report) console.error(decision.report);
+  return { reason: 'verify', accept: decision.accept };
+}
+
+/** docs <dir> — (re)generate the usage README from the PRD + code. */
+export async function runDocs({ argv = [], cwd = process.cwd(), runProcess = defaultRunProcess, baseEnv = process.env } = {}) {
+  const dir = projectDir(argv, cwd);
+  assertProject(dir);
+  process.env.PYTHONUTF8 = '1';
+  const { binaries, env } = await prepareRun({ cwd: dir, baseEnv: { ...baseEnv, PYTHONUTF8: '1' }, runProcess });
+  console.error('[prd2code] writing usage doc (README)…');
+  const r = await generateUsageDoc({ runProcess, claudeBin: binaries.claude, cwd: dir, env });
+  console.error(r.ok ? '[prd2code] README written.' : '[prd2code] usage-doc generation failed.');
+  return { reason: 'docs', ok: r.ok };
+}
+
+/** report <dir> — print the latest run's transcript tail + acceptance result. */
+export async function runReport({ argv = [], cwd = process.cwd() } = {}) {
+  const dir = projectDir(argv, cwd);
+  const runsDir = path.join(dir, 'runs');
+  let runDirs = [];
+  try {
+    runDirs = fs.readdirSync(runsDir).map((n) => path.join(runsDir, n)).filter((p) => fs.statSync(p).isDirectory());
+  } catch {
+    /* none */
+  }
+  if (!runDirs.length) {
+    console.error(`[prd2code] no runs found in ${runsDir}`);
+    return { reason: 'report' };
+  }
+  const latest = runDirs.sort()[runDirs.length - 1];
+  const transcript = path.join(latest, 'transcript.md');
+  if (fs.existsSync(transcript)) {
+    console.error(`[prd2code] ${transcript} (tail):\n`);
+    console.error(fs.readFileSync(transcript, 'utf8').slice(-4000));
+  }
+  const accept = path.join(latest, 'acceptance.json');
+  if (fs.existsSync(accept)) {
+    try {
+      const a = JSON.parse(fs.readFileSync(accept, 'utf8'));
+      console.error(`\n[prd2code] acceptance: ${a.accept ? 'ACCEPTED' : 'REJECTED'}\n${a.report ?? ''}`);
+    } catch {
+      /* ignore */
+    }
+  }
+  return { reason: 'report' };
+}
+
 /** Top-level CLI dispatch: `prd2code <subcommand|prd>`. */
 export async function runCli({ argv = [], ...rest } = {}) {
   const { command, rest: cmdArgs } = parseCommand(argv);
-  if (command === 'resume') return runResume({ argv: cmdArgs, ...rest });
+  const handlers = { resume: runResume, verify: runVerify, docs: runDocs, status: runStatus, doctor: runDoctor, report: runReport, clean: runClean, login: runLogin };
+  if (handlers[command]) return handlers[command]({ argv: cmdArgs, ...rest });
   return runSuperv({ argv: cmdArgs, ...rest });
 }
