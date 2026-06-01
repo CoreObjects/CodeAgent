@@ -31,7 +31,7 @@ import { runWithRecovery, classifyResult } from './resilience.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { detectTestCommand } from './detect-test.js';
 import { collectProjectMap } from './project-map.js';
-import { buildAcceptancePrompt, buildCheckpointPrompt, runAcceptance, appendFixTasks, generateUsageDoc } from './acceptance.js';
+import { buildAcceptancePrompt, buildCheckpointPrompt, runAcceptance, generateUsageDoc } from './acceptance.js';
 import { classifyWorkerReport } from './worker-report.js';
 import { runWithAcceptance } from './finalize.js';
 import { buildLoginGuidance } from './onboarding.js';
@@ -350,11 +350,10 @@ export async function runMain({
   let result;
   try {
     result = await runWithAcceptance({
-      runLoop: () => runLoop(deps),
+      runLoop: (healInstruction) => runLoop(healInstruction ? { ...deps, beginInstruction: healInstruction } : deps),
       reviewProject,
       writeUsageDoc,
       askHuman: askHumanFn,
-      appendFixTasks,
       cwd,
       maxRounds: config.acceptanceMaxRounds,
       log: (m) => console.error(`[prd2code] ${m}`),

@@ -7,11 +7,14 @@ import { runWithAcceptance } from '../src/finalize.js';
 // past N -> escalate. All collaborators injected so it's pure to test.
 
 function harness(over = {}) {
-  const calls = { usageDoc: 0, escalated: [], fixAdded: [], loops: 0 };
+  const calls = { usageDoc: 0, escalated: [], loopCount: 0, healInstructions: [] };
   const base = {
-    runLoop: async () => ({ reason: 'done', turns: 3 }),
+    runLoop: async (healInstruction) => {
+      calls.loopCount++;
+      calls.healInstructions.push(healInstruction);
+      return { reason: 'done', turns: calls.loopCount };
+    },
     reviewProject: async () => ({ decision: { accept: true, report: 'all good', fix_tasks: [] } }),
-    appendFixTasks: (cwd, fixTasks) => calls.fixAdded.push(fixTasks),
     writeUsageDoc: async () => calls.usageDoc++,
     askHuman: async (q) => calls.escalated.push(q),
     cwd: '/x',
@@ -28,11 +31,9 @@ test('accept -> writes the usage doc and returns accepted', async () => {
   assert.equal(calls.escalated.length, 0);
 });
 
-test('reject then accept -> self-heals once, then accepted', async () => {
-  let loopN = 0;
+test('reject then accept -> self-heals once: relays fix instructions to the next loop (not tasks.json)', async () => {
   let reviewN = 0;
   const { deps, calls } = harness({
-    runLoop: async () => ((loopN += 1), { reason: 'done', turns: loopN }),
     reviewProject: async () =>
       reviewN++ === 0
         ? { decision: { accept: false, report: 'needs fix', fix_tasks: [{ title: 'fix', description: 'd' }] } }
@@ -40,9 +41,10 @@ test('reject then accept -> self-heals once, then accepted', async () => {
   });
   const r = await runWithAcceptance(deps);
   assert.equal(r.reason, 'accepted');
-  assert.equal(calls.fixAdded.length, 1); // one heal round
-  assert.equal(calls.fixAdded[0][0].title, 'fix');
-  assert.equal(loopN, 2); // loop ran again after healing
+  assert.equal(calls.loopCount, 2); // loop ran again after healing
+  // second loop call received a heal instruction (not tasks.json write)
+  assert.equal(typeof calls.healInstructions[1], 'string');
+  assert.match(calls.healInstructions[1], /fix/);
   assert.equal(calls.usageDoc, 1);
 });
 

@@ -114,3 +114,52 @@ test('stall guard escalates; an "abort" answer stops the loop', async () => {
   const r = await runLoop(deps);
   assert.equal(r.reason, 'abort');
 });
+
+test('CHECKPOINT_REACHED: same checkpoint rejected maxCheckpointRejects times escalates to human', async () => {
+  const { deps, calls } = makeDeps(
+    [
+      'work.\nSTATUS: CHECKPOINT_REACHED Phase 1',
+      'work.\nSTATUS: CHECKPOINT_REACHED Phase 1',
+      'work.\nSTATUS: CHECKPOINT_REACHED Phase 1',
+      'done.\nSTATUS: PROJECT_COMPLETE',
+    ],
+    {
+      verifyVerdicts: [
+        { accept: false, report: 'still mocked', fix_tasks: [{ title: 'fix', description: 'd' }] },
+        { accept: false, report: 'still mocked', fix_tasks: [{ title: 'fix', description: 'd' }] },
+        { accept: false, report: 'still mocked', fix_tasks: [{ title: 'fix', description: 'd' }] },
+      ],
+      askAnswer: 'abort',
+    },
+  );
+  const r = await runLoop({ ...deps, maxCheckpointRejects: 3 });
+  assert.equal(r.reason, 'abort');
+  assert.equal(calls.verify.length, 3);
+  assert.equal(calls.asked.length, 1);
+  assert.match(calls.asked[0], /Phase 1/);
+  assert.match(calls.asked[0], /3/); // 3 rejections mentioned
+});
+
+test('CHECKPOINT_REACHED: after reject-limit escalation, user says "pass" to override and continue', async () => {
+  const { deps, calls } = makeDeps(
+    [
+      'work.\nSTATUS: CHECKPOINT_REACHED Phase 1',
+      'work.\nSTATUS: CHECKPOINT_REACHED Phase 1',
+      'work.\nSTATUS: CHECKPOINT_REACHED Phase 1',
+      'done.\nSTATUS: PROJECT_COMPLETE',
+    ],
+    {
+      verifyVerdicts: [
+        { accept: false, report: 'still broken', fix_tasks: [] },
+        { accept: false, report: 'still broken', fix_tasks: [] },
+        { accept: false, report: 'still broken', fix_tasks: [] },
+      ],
+      askAnswer: 'pass',
+    },
+  );
+  const r = await runLoop({ ...deps, maxCheckpointRejects: 3 });
+  assert.equal(r.reason, 'done');
+  assert.equal(calls.asked.length, 1);
+  assert.match(calls.worker[3].instruction, /override/i);
+  assert.equal(calls.worker[3].sessionId, null); // fresh session on override
+});

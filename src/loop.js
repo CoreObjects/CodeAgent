@@ -30,11 +30,13 @@ export async function runLoop(deps) {
     beginInstruction,
     continueInstruction = 'Continue working toward the current phase checkpoint.',
     maxTurns = 200,
+    maxCheckpointRejects = 3,
   } = deps;
 
   let sessionId = null;
   let instruction = beginInstruction;
   let turns = 0;
+  const checkpointRejectCounts = new Map();
 
   for (;;) {
     turns += 1;
@@ -89,11 +91,28 @@ export async function runLoop(deps) {
         onCheckpoint({ checkpoint: report.detail, decision: v });
         memo.write(`${memo.read()}\n\n[CHECKPOINT "${report.detail}" ${v.accept ? 'PASSED' : 'REJECTED'}] ${v.report ?? ''}`);
         if (v.accept) {
+          checkpointRejectCounts.delete(report.detail);
           sessionId = null; // fresh worker session per phase — bounds the transcript (token)
           instruction = `Checkpoint "${report.detail}" was verified and PASSED. Proceed to the next phase / checkpoint per the PRD.`;
         } else {
-          const fixes = (v.fix_tasks ?? []).map((f, i) => `${i + 1}. ${f.title}: ${f.description}`).join('\n');
-          instruction = `Checkpoint "${report.detail}" did NOT pass review:\n${v.report ?? ''}\nFix the following, then report again:\n${fixes}`;
+          const rejects = (checkpointRejectCounts.get(report.detail) ?? 0) + 1;
+          checkpointRejectCounts.set(report.detail, rejects);
+          if (rejects >= maxCheckpointRejects) {
+            checkpointRejectCounts.delete(report.detail);
+            const ans = await askHuman(
+              `Checkpoint "${report.detail}" has been rejected ${rejects} time(s).\nLatest report: ${v.report ?? ''}\nType "abort" to stop, "pass" to override and continue, or anything else to keep trying.`,
+            );
+            if (/\babort\b/i.test(ans)) return { reason: 'abort', turns };
+            if (/\bpass\b|override/i.test(ans)) {
+              sessionId = null;
+              instruction = `Checkpoint "${report.detail}" override accepted. Proceed to the next phase / checkpoint per the PRD.`;
+            } else {
+              instruction = ans || continueInstruction;
+            }
+          } else {
+            const fixes = (v.fix_tasks ?? []).map((f, i) => `${i + 1}. ${f.title}: ${f.description}`).join('\n');
+            instruction = `Checkpoint "${report.detail}" did NOT pass review:\n${v.report ?? ''}\nFix the following, then report again:\n${fixes}`;
+          }
         }
         break;
       }
