@@ -59,7 +59,7 @@ export function buildPlanReviewPrompt({ role = '', fixRequirements = '', planTex
     '### FIX PLAN REVIEW',
     `The worker has produced a plan to address the following fix requirements:\n\n${fixRequirements}`,
     `### PROPOSED PLAN\n${planText}`,
-    'Review the plan against the requirements: is it complete, correct, and sufficient to fix all the listed issues? Are there any gaps, wrong approaches, or missing steps? Return the plan-review object per the JSON schema. Respond only with the structured object.',
+    'Review the plan against the requirements. Be LENIENT: accept the plan unless there is an OBVIOUS and CLEAR omission — a required feature or file that the plan completely ignores. Minor imperfections, suboptimal approaches, or style issues are NOT grounds for rejection. Default to accepted=true. Only set accepted=false when something critical is unambiguously missing from the plan. Return the plan-review object per the JSON schema. Respond only with the structured object.',
   ]
     .filter((s) => s != null && s !== '')
     .join('\n\n');

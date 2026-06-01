@@ -51,17 +51,17 @@ test('plan rejected on first round, accepted on second: returns the second plan 
   assert.match(calls.plan[1], /missing test update/);
 });
 
-test('plan rejected for all rounds: falls back to a direct fix instruction (graceful degradation)', async () => {
+test('plan rejected for all rounds: force-passes the last plan (never discards the plan)', async () => {
   const { runPlanTurn, reviewPlan } = harness({
-    planTexts: ['plan1', 'plan2'],
+    planTexts: ['plan1', 'plan2 — final attempt'],
     reviewResults: [
       { accepted: false, assessment: 'bad', feedback: 'wrong approach' },
       { accepted: false, assessment: 'bad', feedback: 'still wrong' },
     ],
   });
   const instruction = await runPlanReviewCycle({ runPlanTurn, reviewPlan, fixRequirements: 'fix sum', maxRounds: 2 });
-  // fallback: instruction is just the fix requirements
-  assert.match(instruction, /fix sum/);
-  // should NOT contain "execute this approved plan" since no plan was approved
-  assert.ok(!instruction.toLowerCase().includes('approved plan'));
+  // must contain the last plan text
+  assert.match(instruction, /plan2 — final attempt/);
+  // must be an execute instruction (not just raw requirements)
+  assert.match(instruction, /[Ee]xecute/);
 });

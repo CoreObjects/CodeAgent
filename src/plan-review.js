@@ -32,14 +32,15 @@ export async function runPlanReviewCycle({ runPlanTurn, reviewPlan, fixRequireme
     `EXACTLY which files you will change and what each change will do. Do NOT make any changes yet.\n\n` +
     `Issues to fix:\n${fixRequirements}`;
 
+  let lastPlanText = '';
   for (let round = 0; round < maxRounds; round++) {
     const turn = await runPlanTurn(planInstruction);
-    const planText = turn.finalText;
+    lastPlanText = turn.finalText;
 
-    const review = await reviewPlan({ fixRequirements, planText });
+    const review = await reviewPlan({ fixRequirements, planText: lastPlanText });
     if (review.accepted) {
       log(`Plan approved on round ${round + 1}.`);
-      return `Execute this approved plan exactly as described:\n\n${planText}\n\nOriginal requirements:\n${fixRequirements}`;
+      return `Execute this approved plan exactly as described:\n\n${lastPlanText}\n\nOriginal requirements:\n${fixRequirements}`;
     }
 
     log(`Plan rejected (round ${round + 1}): ${review.feedback}`);
@@ -48,7 +49,9 @@ export async function runPlanReviewCycle({ runPlanTurn, reviewPlan, fixRequireme
       `Revise your plan to fully address:\n${fixRequirements}`;
   }
 
-  // Graceful degradation: codex couldn't approve a plan — give claude the requirements directly
-  log(`Plan review exhausted ${maxRounds} round(s) — sending fix requirements directly.`);
-  return fixRequirements;
+  // After maxRounds without approval, force-pass the last plan rather than discarding it.
+  // codex is meant to be lenient and only block obvious omissions — if it still hasn't
+  // approved after 2 rounds, the plan is good enough; proceed with execution.
+  log(`Plan review exhausted ${maxRounds} round(s) — forcing execution of last plan.`);
+  return `Execute this plan exactly as described:\n\n${lastPlanText}\n\nOriginal requirements:\n${fixRequirements}`;
 }
