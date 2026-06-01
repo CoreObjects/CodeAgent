@@ -29,7 +29,7 @@ import { taskMasterNext, taskMasterSetStatus } from './task-trunk.js';
 import { createRunLogger, redactSecrets } from './logging.js';
 import { createEscalationChannel } from './escalation.js';
 import { createProgressGuard } from './progress-guard.js';
-import { runWithResilience, classifyFailure } from './resilience.js';
+import { runWithRecovery, classifyFailure } from './resilience.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { detectTestCommand } from './detect-test.js';
 import { collectProjectMap } from './project-map.js';
@@ -79,12 +79,18 @@ export function buildOrchestrator({
   sleep,
   reporter,
   totalTasks = 0,
+  runNote = '', // prepended to every goal (e.g. "you are RESUMING…")
 } = {}) {
   const log = logger ?? createRunLogger({ baseDir: config.logDir, runId });
   const runDir = log.runDir;
   fs.mkdirSync(runDir, { recursive: true });
 
-  const memoPath = path.join(runDir, 'memo.md');
+  // codex's rolling memo lives at a STABLE project path (not under runs/<runId>/)
+  // so a resumed run reloads codex's accumulated memory and continues, instead of
+  // starting blind. This is the root-cause fix for "interrupted -> can't continue".
+  const stateDir = path.join(cwd, '.prd2code');
+  fs.mkdirSync(stateDir, { recursive: true });
+  const memoPath = path.join(stateDir, 'memo.md');
   const decisionPath = decisionFile ?? path.join(runDir, 'codex-decision.json');
   const memo = createMemoStore({ path: memoPath, maxChars: config.memoMaxChars, onWarn });
   const guard = createProgressGuard({ threshold: 3 });
@@ -109,11 +115,15 @@ export function buildOrchestrator({
       },
     }).askHuman;
 
-  const resilienceOpts = {
+  // Run-level recovery: long-wait on quota/network, give up after N -> clean exit
+  // (resume later with memo/tasks intact). onWait surfaces the pause to the screen.
+  const recoveryOpts = {
     classify: throwOnlyClassify,
+    longWaitMs: config.recoveryWaitMs,
+    maxAttempts: config.recoveryMaxAttempts,
     sleep,
-    onEscalate: async ({ kind, message }) =>
-      askHumanFn(`Transient failure (${kind}): ${message} Continue waiting, retry later, or abort?`),
+    onWait: ({ kind, waitMs, attempt }) =>
+      console.error(`[prd2code] ${kind}: waiting ${Math.round(waitMs / 60000)}min before retry (attempt ${attempt}/${config.recoveryMaxAttempts})…`),
   };
 
   // --- adapters: each binds a tested module to the loop's dep contract ---
@@ -124,8 +134,8 @@ export function buildOrchestrator({
   const setStatus = (id, status) =>
     taskMasterSetStatus({ runProcess, taskMasterBin: binaries.taskMaster, cwd, env }, id, status);
 
-  const runWorkerTurn = async ({ instruction, sessionId }) => {
-    const r = await runWithResilience(
+  const runWorkerTurn = ({ instruction, sessionId }) =>
+    runWithRecovery(
       () =>
         runClaudeTurn({
           runProcess,
@@ -138,21 +148,8 @@ export function buildOrchestrator({
           timeoutMs: config.timeouts.claudeTurnMs,
           onEvent: reporter ? (ev) => reporter.workerEvent(ev) : undefined, // live stream
         }),
-      resilienceOpts,
+      recoveryOpts,
     );
-    if (r && r.escalated) {
-      // worker unreachable after retries — keep the loop alive; codex sees it as evidence.
-      return {
-        sessionId,
-        finalText: `[worker unavailable: ${r.kind}] human said: ${r.answer}`,
-        toolUseCalls: [],
-        toolResults: [],
-        resultEvent: null,
-        terminationReason: 'escalated',
-      };
-    }
-    return r;
-  };
 
   const snapshotStart = () => gtSnapshotStart({ runProcess, cwd });
 
@@ -169,8 +166,8 @@ export function buildOrchestrator({
     return { digest, json };
   };
 
-  const decide = async ({ instructions, evidenceJson }) => {
-    const r = await runWithResilience(
+  const decide = ({ instructions, evidenceJson }) =>
+    runWithRecovery(
       () =>
         runCodexSupervisor({
           runProcess,
@@ -183,23 +180,8 @@ export function buildOrchestrator({
           cwd,
           timeoutMs: config.timeouts.codexTurnMs,
         }),
-      resilienceOpts,
-    );
-    if (r && r.escalated) {
-      // supervisor unreachable after retries — synthesize an escalate so a human decides.
-      return {
-        decision: {
-          verdict: 'escalate',
-          assessment: `codex unreachable (${r.kind})`,
-          escalation_question: `The supervisor was unreachable (${r.kind}); the human said: ${r.answer}. Continue, wait, or abort?`,
-          escalation_category: 'judgment_human_would_want',
-          cited_evidence: [{ source: 'tool_result', observation: `codex transient failure: ${r.kind}` }],
-          updated_memo: memo.read(),
-        },
-      };
-    }
-    return r; // { decision, valid, reAsked }
-  };
+      recoveryOpts,
+    ); // returns { decision, valid, reAsked }; throws recoveryExhausted only after N quota failures
 
   // Collect the bounded project map each turn so codex has cross-task awareness
   // (the single-task evidence digest can't give it). Cheap: git ls-files + tasks.json.
@@ -213,7 +195,10 @@ export function buildOrchestrator({
     return assembleCodexPrompt({ role, goal, memo: memoText, projectMap, memoCap: config.memoMaxChars });
   };
 
-  const renderGoal = (task) => renderTaskGoal(task, workerBootstrap);
+  const renderGoal = (task) => {
+    const goal = renderTaskGoal(task, workerBootstrap);
+    return runNote ? `${runNote}\n\n${goal}` : goal;
+  };
 
   // Per-task stall tracking: reset the mechanical counter on each task's first turn.
   const preTurnGuard = ({ task, taskTurns }) => {
@@ -283,6 +268,7 @@ export async function runMain({
   logger,
   reporter,
   totalTasks = 0,
+  runNote = '',
 } = {}) {
   const config = validateConfig(configOverride ?? loadConfigFile(cwd));
   const env = sanitizeEnv(baseEnv);
@@ -326,8 +312,20 @@ export async function runMain({
     askHuman,
     reporter,
     totalTasks,
+    runNote,
   });
-  const result = await runLoop(deps);
+  let result;
+  try {
+    result = await runLoop(deps);
+  } catch (err) {
+    if (err.recoveryExhausted) {
+      // Quota/network never recovered after N attempts — exit cleanly; the memo
+      // and task state are on disk, so the user resumes later.
+      console.error(`\n[prd2code] interrupted (${err.kind}) and could not recover: ${err.message}`);
+      console.error(`[prd2code] progress is saved. Resume later with:  prd2code resume ${cwd}`);
+    }
+    throw err;
+  }
   if (reporter) reporter.done(result);
   return { ...result, runDir, binaries };
 }

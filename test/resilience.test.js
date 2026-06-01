@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyFailure, nextBackoffMs, runWithResilience } from '../src/resilience.js';
+import { classifyFailure, nextBackoffMs, runWithResilience, parseRetryAfterMs, runWithRecovery } from '../src/resilience.js';
 
 // REQ-017: classify rate-limit / auth-refresh failures from either agent; retry
 // auth ONCE (no API-key injection — each agent refreshes its own token), apply
@@ -114,6 +114,65 @@ test('a clean success on the first try returns immediately with no sleep or esca
   assert.equal(r.stdout, 'ok');
   assert.equal(delays.length, 0);
   assert.equal(escalated, false);
+});
+
+// --- v3: run-level recovery (long wait on quota, give up after N -> exit) ---
+
+test('parseRetryAfterMs reads common retry hints, else null', () => {
+  assert.equal(parseRetryAfterMs('Please try again in 2h13m'), (2 * 3600 + 13 * 60) * 1000);
+  assert.equal(parseRetryAfterMs('rate limited; retry after 120'), 120000);
+  assert.equal(parseRetryAfterMs('Retry-After: 45'), 45000);
+  assert.equal(parseRetryAfterMs('try again in 30 seconds'), 30000);
+  assert.equal(parseRetryAfterMs('no hint here'), null);
+});
+
+test('runWithRecovery retries auth once immediately (no wait), then succeeds', async () => {
+  let n = 0;
+  const op = async () => (++n === 1 ? { stderr: '401 unauthorized' } : { stdout: 'ok', code: 0 });
+  const waits = [];
+  let authRetries = 0;
+  const r = await runWithRecovery(op, { sleep: async (ms) => waits.push(ms), onAuthRetry: () => authRetries++ });
+  assert.equal(r.stdout, 'ok');
+  assert.equal(authRetries, 1);
+  assert.equal(waits.length, 0); // auth retry is immediate, no long wait
+});
+
+test('runWithRecovery long-waits on quota, using the parsed reset time, then proceeds', async () => {
+  const seq = [{ stderr: 'usage limit reached, try again in 1h' }, { stdout: 'done', code: 0 }];
+  let i = 0;
+  const waits = [];
+  const r = await runWithRecovery(async () => seq[i++], { longWaitMs: 7200000, sleep: async (ms) => waits.push(ms) });
+  assert.equal(r.stdout, 'done');
+  assert.deepEqual(waits, [3600000]); // used the hinted 1h, not the 2h default
+});
+
+test('runWithRecovery falls back to longWaitMs when no reset time is given', async () => {
+  const seq = [{ stderr: 'quota exceeded' }, { stdout: 'ok', code: 0 }];
+  let i = 0;
+  const waits = [];
+  await runWithRecovery(async () => seq[i++], { longWaitMs: 999, sleep: async (ms) => waits.push(ms) });
+  assert.deepEqual(waits, [999]);
+});
+
+test('runWithRecovery throws recoveryExhausted after maxAttempts (caller exits & user resumes later)', async () => {
+  const op = async () => ({ stderr: '429 rate limit' });
+  let info = null;
+  await assert.rejects(
+    runWithRecovery(op, { maxAttempts: 3, longWaitMs: 1, sleep: async () => {} }).catch((e) => {
+      info = e;
+      throw e;
+    }),
+    /recovery exhausted|rate limit/i,
+  );
+  assert.equal(info.recoveryExhausted, true);
+  assert.equal(info.kind, 'rate_limit');
+});
+
+test('runWithRecovery returns immediately on success (no wait, no exhaust)', async () => {
+  const waits = [];
+  const r = await runWithRecovery(async () => ({ stdout: 'ok', code: 0 }), { sleep: async (ms) => waits.push(ms) });
+  assert.equal(r.stdout, 'ok');
+  assert.equal(waits.length, 0);
 });
 
 test('a thrown error is classified too (transient throw retried, hard throw returned)', async () => {

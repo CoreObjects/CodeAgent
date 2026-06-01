@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
-import { slugFromPrd, parseSupervArgs, scaffoldRepo } from '../src/cli.js';
+import { slugFromPrd, parseSupervArgs, scaffoldRepo, parseCommand } from '../src/cli.js';
 
 // Pure CLI helpers. The IO-heavy runSuperv (scaffold + decompose + run) is
 // covered by the live smoke (`prd2code docs/test-prd.md --limit 3`), not unit tests.
@@ -45,6 +45,12 @@ test('parseSupervArgs: a second positional is the target dir', () => {
   const o = parseSupervArgs(['./prd.md', './target']);
   assert.equal(o.prd, './prd.md');
   assert.equal(o.out, './target');
+});
+
+test('parseCommand routes known subcommands and defaults to build', () => {
+  assert.deepEqual(parseCommand(['resume', './dir']), { command: 'resume', rest: ['./dir'] });
+  assert.deepEqual(parseCommand(['./prd.md']), { command: 'build', rest: ['./prd.md'] });
+  assert.deepEqual(parseCommand([]), { command: 'build', rest: [] });
 });
 
 test('scaffoldRepo lays down the PRD + scaffold + worker settings, creating .taskmaster/docs (regression)', async () => {

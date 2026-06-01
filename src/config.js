@@ -23,6 +23,11 @@ export const DEFAULT_CONFIG = {
   // instead of being overridden by the CLI --allowedTools flag.
   permissionMode: 'auto',
   allowedTools: [],
+  // Run-level recovery for long interruptions (quota/network): wait this long
+  // (or the server-hinted reset time) before retrying; give up after N attempts
+  // so the run exits cleanly and can be resumed later.
+  recoveryWaitMs: 7_200_000, // 2h
+  recoveryMaxAttempts: 3,
 };
 
 const API_KEY_NAMED = new Set(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY']);

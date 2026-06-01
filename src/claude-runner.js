@@ -113,7 +113,12 @@ export async function runClaudeTurn({
 
   const turn = normalizeClaudeTurn(events);
   if (!turn.sessionId) {
-    throw new Error('claude stream had no init/session_id — later turns cannot resume');
+    // Attach stderr/exit so the recovery layer can classify a masked failure
+    // (e.g. a rate-limit/quota error that prevented any stream output).
+    const err = new Error('claude stream had no init/session_id — later turns cannot resume');
+    err.stderr = res.stderr;
+    err.exitCode = res.code;
+    throw err;
   }
 
   // The result event is the canonical turn boundary (subtask 5.4).

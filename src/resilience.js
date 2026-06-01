@@ -46,6 +46,79 @@ export function nextBackoffMs(attempt, { baseMs = 1000, factor = 2, capMs = 6000
   return Math.min(capMs, baseMs * Math.pow(factor, attempt));
 }
 
+/**
+ * Extract a retry delay (ms) from an error/CLI message, or null. Handles
+ * "try again in 2h13m", "retry after 120", "Retry-After: 45", "in 30 seconds".
+ * Pure — lets recovery wait exactly as long as the server asks (transient vs quota).
+ */
+export function parseRetryAfterMs(text) {
+  const s = String(text ?? '');
+  const ctx = s.match(/(?:try )?again in|retry[- ]?after|please wait/i);
+  if (ctx) {
+    const tail = s.slice(ctx.index);
+    let ms = 0;
+    let found = false;
+    for (const m of tail.matchAll(/(\d+)\s*(h|m|s)/gi)) {
+      const n = Number(m[1]);
+      const u = m[2].toLowerCase();
+      ms += n * (u === 'h' ? 3600000 : u === 'm' ? 60000 : 1000);
+      found = true;
+    }
+    if (found) return ms;
+    const bare = tail.match(/(\d+)/); // e.g. "retry after 120" (seconds)
+    if (bare) return Number(bare[1]) * 1000;
+  }
+  return null;
+}
+
+/**
+ * Run-level recovery for long interruptions (quota exhausted, network down). On a
+ * transient failure: retry auth ONCE immediately (no API key); otherwise WAIT the
+ * server-hinted reset time (or `longWaitMs`, default 2h) and retry. After
+ * `maxAttempts` consecutive failures, throw an error tagged `recoveryExhausted`
+ * so the caller prints it and exits cleanly — the user resumes later with the
+ * memo/tasks intact. `sleep`/`onWait` are injected for fast deterministic tests.
+ *
+ * @param {() => Promise<any>} operation
+ * @param {{classify?:Function, longWaitMs?:number, maxAttempts?:number, sleep?:Function, onWait?:Function, onAuthRetry?:Function}} [opts]
+ */
+export async function runWithRecovery(
+  operation,
+  { classify = classifyFailure, longWaitMs = 2 * 60 * 60 * 1000, maxAttempts = 3, sleep = realSleep, onWait = () => {}, onAuthRetry = () => {} } = {},
+) {
+  let attempts = 0;
+  let authRetried = false;
+
+  for (;;) {
+    let result;
+    try {
+      result = await operation();
+    } catch (err) {
+      result = err;
+    }
+    const kind = result instanceof Error ? classifyFailure({ message: result.message, stderr: result.stderr }) : classify(result);
+    if (kind === 'none') return result;
+
+    if (kind === 'auth_refresh' && !authRetried) {
+      authRetried = true;
+      onAuthRetry(); // single immediate retry, NEVER an API key
+      continue;
+    }
+
+    attempts += 1;
+    if (attempts >= maxAttempts) {
+      const err = result instanceof Error ? result : new Error(`recovery exhausted (${kind}) after ${attempts} attempts`);
+      err.recoveryExhausted = true;
+      err.kind = kind;
+      throw err;
+    }
+    const text = result instanceof Error ? result.message : `${result?.stderr ?? ''} ${result?.stdout ?? ''}`;
+    const waitMs = parseRetryAfterMs(text) ?? longWaitMs;
+    onWait({ attempt: attempts, waitMs, kind });
+    await sleep(waitMs);
+  }
+}
+
 const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**

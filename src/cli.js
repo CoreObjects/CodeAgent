@@ -97,6 +97,12 @@ export async function scaffoldRepo({ outDir, prdPath, runProcess = defaultRunPro
   fs.mkdirSync(docsDir, { recursive: true }); // copyFileSync does NOT create the dir
   fs.copyFileSync(prdPath, path.join(docsDir, 'prd.md'));
   ensureWorkerSettings(outDir, { overwrite: true });
+  // Keep orchestrator state (codex memo, per-run transcripts) out of the worker's commits.
+  const gi = path.join(outDir, '.gitignore');
+  const existing = fs.existsSync(gi) ? fs.readFileSync(gi, 'utf8') : '';
+  if (!/^\.prd2code\/$/m.test(existing)) {
+    fs.writeFileSync(gi, `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}# prd2code orchestrator state\n.prd2code/\nruns/\n`, 'utf8');
+  }
   await gitInitWithBaseline(outDir, runProcess);
 }
 
@@ -192,4 +198,72 @@ export async function runSuperv({
     askHuman: askHuman ?? consoleAskHuman,
   });
   return { ...result, outDir, slug };
+}
+
+// --- subcommand dispatch -------------------------------------------------
+
+const SUBCOMMANDS = new Set(['resume']);
+
+/** Route argv to a subcommand, defaulting to `build` (a bare PRD path). Pure. */
+export function parseCommand(argv) {
+  const first = argv[0];
+  if (SUBCOMMANDS.has(first)) return { command: first, rest: argv.slice(1) };
+  return { command: 'build', rest: argv };
+}
+
+function readTasks(tasksPath) {
+  try {
+    return JSON.parse(fs.readFileSync(tasksPath, 'utf8')).master?.tasks ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resume an interrupted build in <dir>. The PRD was copied in at build time, so
+ * only the dir is needed. If decomposition never finished, finish it first. The
+ * codex memo (stable path) and task state are reloaded; codex/claude are told
+ * they are resuming so they survey the existing code before continuing.
+ */
+export async function runResume({ argv = [], cwd = process.cwd(), runProcess = defaultRunProcess, baseEnv = process.env, reporter, askHuman } = {}) {
+  const dir = path.resolve(cwd, argv[0] ?? '.');
+  if (!fs.existsSync(path.join(dir, '.taskmaster'))) throw new Error(`not a prd2code project (no .taskmaster/): ${dir}`);
+  const prdInRepo = path.join(dir, '.taskmaster', 'docs', 'prd.md');
+  if (!fs.existsSync(prdInRepo)) throw new Error(`no PRD at ${prdInRepo} — cannot resume`);
+
+  process.env.PYTHONUTF8 = '1';
+  const env = { ...baseEnv, PYTHONUTF8: '1' };
+
+  const tasksPath = path.join(dir, '.taskmaster', 'tasks', 'tasks.json');
+  let tasks = readTasks(tasksPath);
+  if (!tasks.length) {
+    const bins = await resolveAllBinaries(validateConfig({}), runProcess);
+    console.error('[prd2code] no tasks yet — finishing decomposition before resuming…');
+    const tj = await decomposePrd({ prdPath: prdInRepo, claudeBin: bins.claude, env: sanitizeEnv(env), runProcess });
+    fs.mkdirSync(path.dirname(tasksPath), { recursive: true });
+    fs.writeFileSync(tasksPath, JSON.stringify(tj, null, 2), 'utf8');
+    tasks = tj.master.tasks;
+  }
+  const total = tasks.length;
+  const doneN = tasks.filter((t) => t.status === 'done').length;
+  console.error(`[prd2code] resuming ${dir} — ${doneN}/${total} tasks done.\n`);
+
+  const result = await runMain({
+    cwd: dir,
+    baseEnv: env,
+    configOverride: { logDir: path.join(dir, 'runs') },
+    reporter: reporter ?? createConsoleReporter({}),
+    askHuman: askHuman ?? consoleAskHuman,
+    totalTasks: total,
+    runNote:
+      'You are RESUMING an interrupted build. The repo already contains prior work — read the existing code and current task state before changing anything, and continue from where it left off.',
+  });
+  return { ...result, outDir: dir };
+}
+
+/** Top-level CLI dispatch: `prd2code <subcommand|prd>`. */
+export async function runCli({ argv = [], ...rest } = {}) {
+  const { command, rest: cmdArgs } = parseCommand(argv);
+  if (command === 'resume') return runResume({ argv: cmdArgs, ...rest });
+  return runSuperv({ argv: cmdArgs, ...rest });
 }
