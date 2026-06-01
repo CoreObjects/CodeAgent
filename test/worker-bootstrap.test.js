@@ -26,6 +26,12 @@ test('tells the worker to wire acceptance criteria (coverage etc.) into the stan
   assert.match(p, /coverage|addopts/i);
 });
 
+test('warns that GUI tests must be headless / non-blocking (no modal exec, offscreen)', () => {
+  const p = buildWorkerBootstrap({ testCommand: ['python', '-m', 'pytest', '-q'] });
+  assert.match(p, /headless|offscreen/i);
+  assert.match(p, /exec\(\)|modal|hang/i);
+});
+
 test('does not impose a rigid output schema (no output-format / json-schema constraint)', () => {
   const p = buildWorkerBootstrap({ testCommand: ['npm', 'test'] });
   assert.doesNotMatch(p, /output-format|respond with json|json schema|response format/i);

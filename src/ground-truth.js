@@ -49,7 +49,7 @@ function tail(text, n) {
  * optional test command result. When no test command is configured the `test`
  * field is omitted entirely (never a fabricated pass).
  */
-export async function collect({ runProcess = defaultRunProcess, cwd, snapshot, testCommand = null }) {
+export async function collect({ runProcess = defaultRunProcess, cwd, snapshot, testCommand = null, testTimeoutMs, env }) {
   const preHead = snapshot.head;
   const [shortstat, nameOnly, status, headAfter] = await Promise.all([
     runProcess('git', ['diff', '--shortstat', preHead], { cwd }),
@@ -73,7 +73,9 @@ export async function collect({ runProcess = defaultRunProcess, cwd, snapshot, t
 
   const tc = normalizeTestCommand(testCommand);
   if (tc) {
-    const tr = await runProcess(tc[0], tc.slice(1), { cwd });
+    // A timeout is essential: a hung test (e.g. a GUI test waiting on a modal
+    // dialog with no one to click) would otherwise block the orchestrator forever.
+    const tr = await runProcess(tc[0], tc.slice(1), { cwd, env, timeoutMs: testTimeoutMs });
     result.test = {
       ran: true,
       command: tc.join(' '),

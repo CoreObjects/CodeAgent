@@ -12,7 +12,7 @@ import { runProcess as defaultRunProcess } from './proc.js';
 export const DEFAULT_CONFIG = {
   // Absolute-path overrides for the three CLIs; null => resolve via where/which.
   binaries: { claude: null, codex: null, taskMaster: null },
-  timeouts: { processMs: 120_000, claudeTurnMs: 1_800_000, codexTurnMs: 600_000 },
+  timeouts: { processMs: 120_000, claudeTurnMs: 1_800_000, codexTurnMs: 600_000, testMs: 600_000 },
   memoMaxChars: 6000,
   digestMaxChars: 6000,
   testCommand: null,
@@ -30,6 +30,17 @@ export const DEFAULT_CONFIG = {
   recoveryMaxAttempts: 3,
   // Whole-project acceptance: self-heal this many rounds before escalating.
   acceptanceMaxRounds: 2,
+};
+
+// Common "render headless / no window" env vars passed to the worker + test
+// command, so GUI/frontend tests don't pop a window or block on a display. Each
+// is a no-op for frameworks not in use. NOT exhaustive (e.g. Tkinter on Windows
+// has no offscreen mode; browsers go headless via test config) — the per-test
+// timeout (timeouts.testMs) is the universal backstop for anything uncovered.
+export const HEADLESS_ENV = {
+  QT_QPA_PLATFORM: 'offscreen', // Qt / PyQt / PySide
+  MPLBACKEND: 'Agg', // matplotlib
+  SDL_VIDEODRIVER: 'dummy', // SDL / pygame / arcade
 };
 
 const API_KEY_NAMED = new Set(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY']);

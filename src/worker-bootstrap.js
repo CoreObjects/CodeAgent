@@ -16,6 +16,9 @@ export function buildWorkerBootstrap({ testCommand = null } = {}) {
     );
   }
   lines.push(
+    'This run is fully HEADLESS and unattended — no human can click anything and there is no display, for ANY frontend (Qt, Tkinter, GTK, a web/browser UI, Java Swing, SDL/pygame, …). UI/frontend tests must run headless and non-blocking: never enter a blocking event loop or modal that waits for interaction (Qt `.exec()`/`app.exec()`, Tk `mainloop()`, a browser needing a real display). Use the framework headless mode and test fixtures — Qt offscreen (already set via QT_QPA_PLATFORM), matplotlib Agg / SDL dummy (already set), browsers in headless mode (Playwright/Puppeteer), Java AWT `-Djava.awt.headless=true` — or test the logic without showing a window. A test that waits for a click or a display will hang.',
+  );
+  lines.push(
     'Report what you actually did and changed. Never claim completion the evidence does not support — if something is unfinished or tests fail, say so plainly.',
   );
   return lines.join(' ');

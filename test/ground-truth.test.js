@@ -74,6 +74,18 @@ test('collect runs the test command and passes a non-zero exit code through fait
   assert.match(gt.test.outputTail, /FAIL/);
 });
 
+test('collect applies a timeout (+env) to the test command so a hung/GUI test cannot block forever', async () => {
+  let seen = null;
+  const run = async (bin, args = [], opts = {}) => {
+    if (bin === 'git') return { code: 0, stdout: '', stderr: '', timedOut: false, error: null };
+    seen = opts;
+    return { code: 0, stdout: 'ok', stderr: '', timedOut: false, error: null };
+  };
+  await collect({ runProcess: run, cwd: '.', snapshot: { head: 'abc' }, testCommand: ['python', '-m', 'pytest'], testTimeoutMs: 600000, env: { QT_QPA_PLATFORM: 'offscreen' } });
+  assert.equal(seen.timeoutMs, 600000);
+  assert.equal(seen.env.QT_QPA_PLATFORM, 'offscreen');
+});
+
 // --- scratch-repo integration --------------------------------------------
 
 test('integration: changed-file list is scoped to the pre-turn HEAD (scratch git repo)', async () => {

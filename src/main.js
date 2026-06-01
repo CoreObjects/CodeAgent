@@ -160,7 +160,14 @@ export function buildOrchestrator({
   // Zero-config ground truth: an explicit config testCommand wins; otherwise
   // auto-detect from the repo each turn (it appears as the worker builds it).
   const collect = (snapshot) =>
-    gtCollect({ runProcess, cwd, snapshot, testCommand: config.testCommand ?? detectTestCommand(cwd) });
+    gtCollect({
+      runProcess,
+      cwd,
+      snapshot,
+      testCommand: config.testCommand ?? detectTestCommand(cwd),
+      testTimeoutMs: config.timeouts.testMs, // never let a hung (e.g. GUI) test block forever
+      env,
+    });
 
   const buildDigest = ({ turn, groundTruth, task, turnIndex }) => {
     const { digest, json } = buildEvidenceDigest(

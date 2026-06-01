@@ -13,7 +13,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 
 import { runProcess as defaultRunProcess } from './proc.js';
-import { resolveAllBinaries, sanitizeEnv, validateConfig } from './config.js';
+import { resolveAllBinaries, sanitizeEnv, validateConfig, HEADLESS_ENV } from './config.js';
 import { decomposePrd } from './decompose.js';
 import { ensureWorkerSettings } from './worker-permissions.js';
 import { createConsoleReporter } from './reporter.js';
@@ -148,7 +148,7 @@ export async function runSuperv({
   }
 
   // env: keep UTF-8 sane for Python toolchains under a GBK locale.
-  const env = { ...baseEnv, PYTHONUTF8: '1' };
+  const env = { ...baseEnv, PYTHONUTF8: '1', ...HEADLESS_ENV };
 
   let total = 0;
   if (opts.decompose) {
@@ -251,7 +251,7 @@ export async function runResume({ argv = [], cwd = process.cwd(), runProcess = d
   if (!fs.existsSync(prdInRepo)) throw new Error(`no PRD at ${prdInRepo} — cannot resume`);
 
   process.env.PYTHONUTF8 = '1';
-  const env = { ...baseEnv, PYTHONUTF8: '1' };
+  const env = { ...baseEnv, PYTHONUTF8: '1', ...HEADLESS_ENV };
 
   const tasksPath = path.join(dir, '.taskmaster', 'tasks', 'tasks.json');
   let tasks = readTasks(tasksPath);
@@ -339,7 +339,7 @@ export async function runVerify({ argv = [], cwd = process.cwd(), runProcess = d
   const dir = projectDir(argv, cwd);
   assertProject(dir);
   process.env.PYTHONUTF8 = '1';
-  const { config, env, binaries } = await prepareRun({ cwd: dir, configOverride: { logDir: path.join(dir, 'runs') }, baseEnv: { ...baseEnv, PYTHONUTF8: '1' }, runProcess });
+  const { config, env, binaries } = await prepareRun({ cwd: dir, configOverride: { logDir: path.join(dir, 'runs') }, baseEnv: { ...baseEnv, PYTHONUTF8: '1', ...HEADLESS_ENV }, runProcess });
   const { reviewProject } = buildOrchestrator({ config, binaries, cwd: dir, env, runId: 'verify', runProcess, askHuman });
   console.error('[prd2code] running whole-project acceptance review…');
   const { decision } = await reviewProject();
@@ -353,7 +353,7 @@ export async function runDocs({ argv = [], cwd = process.cwd(), runProcess = def
   const dir = projectDir(argv, cwd);
   assertProject(dir);
   process.env.PYTHONUTF8 = '1';
-  const { binaries, env } = await prepareRun({ cwd: dir, baseEnv: { ...baseEnv, PYTHONUTF8: '1' }, runProcess });
+  const { binaries, env } = await prepareRun({ cwd: dir, baseEnv: { ...baseEnv, PYTHONUTF8: '1', ...HEADLESS_ENV }, runProcess });
   console.error('[prd2code] writing usage doc (README)…');
   const r = await generateUsageDoc({ runProcess, claudeBin: binaries.claude, cwd: dir, env });
   console.error(r.ok ? '[prd2code] README written.' : '[prd2code] usage-doc generation failed.');
