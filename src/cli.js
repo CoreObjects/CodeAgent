@@ -365,7 +365,7 @@ export async function runDocs({ argv = [], cwd = process.cwd(), runProcess = def
   const dir = path.resolve(cwd, opts.prd ?? '.');
   assertProject(dir);
   process.env.PYTHONUTF8 = '1';
-  const { binaries, env } = await prepareRun({ cwd: dir, baseEnv: { ...baseEnv, PYTHONUTF8: '1', ...HEADLESS_ENV }, runProcess });
+  const { binaries, env } = await prepareRun({ cwd: dir, baseEnv: { ...baseEnv, PYTHONUTF8: '1', ...HEADLESS_ENV }, runProcess, requireCodex: false });
   console.error('[prd2code] writing usage doc (README)…');
   const r = await generateUsageDoc({ runProcess, claudeBin: binaries.claude, cwd: dir, env, model: opts.model || 'sonnet', effort: opts.effort || 'high' });
   console.error(r.ok ? '[prd2code] README written.' : '[prd2code] usage-doc generation failed.');

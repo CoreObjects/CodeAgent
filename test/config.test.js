@@ -182,3 +182,16 @@ test('runStartupProbe reports not-ok when a runner returns a non-zero exit', asy
   assert.equal(res.claude.ok, true);
   assert.equal(res.codex.ok, false);
 });
+
+test('runStartupProbe with probeCodex:false skips codex entirely and reports it ok (claude-only commands)', async () => {
+  const calls = [];
+  const fakeRun = async (bin) => {
+    calls.push(bin);
+    return { code: 0, stdout: 'OK', stderr: '', timedOut: false, error: null };
+  };
+  const res = await runStartupProbe({ runProcess: fakeRun, claudeBin: 'claude', codexBin: 'codex', env: {}, probeCodex: false });
+  assert.equal(res.claude.ok, true);
+  assert.equal(res.codex.ok, true);
+  assert.equal(res.codex.skipped, true);
+  assert.ok(!calls.includes('codex'), 'codex binary must never be invoked');
+});

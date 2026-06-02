@@ -212,8 +212,15 @@ function probeOk(res) {
  * confirm subscription auth works before a real run. codex gets `input: ''`
  * so proc.js closes stdin (codex exec otherwise blocks on stdin).
  */
-export async function runStartupProbe({ runProcess = defaultRunProcess, claudeBin, codexBin, env }) {
+export async function runStartupProbe({ runProcess = defaultRunProcess, claudeBin, codexBin, env, probeCodex = true }) {
   const claudeRes = await runProcess(claudeBin, buildClaudeProbeArgs(), { env });
+  if (!probeCodex) {
+    // claude-only commands (e.g. docs): never invoke codex, report it as ok+skipped
+    return {
+      claude: { ok: probeOk(claudeRes), result: claudeRes },
+      codex: { ok: true, skipped: true },
+    };
+  }
   const codexRes = await runProcess(codexBin, buildCodexProbeArgs(), { env, input: '' });
   return {
     claude: { ok: probeOk(claudeRes), result: claudeRes },

@@ -359,12 +359,13 @@ function defaultRunId() {
  * agent isn't reachable. Shared by build/resume and verify/docs. Returns
  * { config, env, binaries, probe }.
  */
-export async function prepareRun({ cwd = process.cwd(), configOverride = null, baseEnv = process.env, runProcess = defaultRunProcess } = {}) {
+export async function prepareRun({ cwd = process.cwd(), configOverride = null, baseEnv = process.env, runProcess = defaultRunProcess, requireCodex = true } = {}) {
   const config = validateConfig(configOverride ?? loadConfigFile(cwd));
   const env = sanitizeEnv(baseEnv);
   const binaries = await resolveAllBinaries(config, runProcess);
-  const probe = await runStartupProbe({ runProcess, claudeBin: binaries.claude, codexBin: binaries.codex, env });
-  if (!probe.claude.ok || !probe.codex.ok) {
+  const probe = await runStartupProbe({ runProcess, claudeBin: binaries.claude, codexBin: binaries.codex, env, probeCodex: requireCodex });
+  const codexOk = requireCodex ? probe.codex.ok : true;
+  if (!probe.claude.ok || !codexOk) {
     const err = new Error(buildLoginGuidance({ claudeOk: probe.claude.ok, codexOk: probe.codex.ok }));
     err.notLoggedIn = true;
     throw err;

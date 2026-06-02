@@ -4,7 +4,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildOrchestrator, runMain } from '../src/main.js';
+import { buildOrchestrator, runMain, prepareRun } from '../src/main.js';
 import { runLoop } from '../src/loop.js';
 import { validateConfig, sanitizeEnv } from '../src/config.js';
 
@@ -148,6 +148,31 @@ test('runMain refuses to run when the subscription probe fails, and never passes
   assert.ok(seenEnvs.length >= 1);
   for (const e of seenEnvs) {
     assert.ok(!Object.keys(e).some((k) => k.toUpperCase().endsWith('_API_KEY')), 'probe must use a sanitized env');
+  }
+});
+
+test('prepareRun with requireCodex:false succeeds when only claude is up (claude-only commands skip codex)', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'prep-'));
+  try {
+    const calls = [];
+    const runProcess = async (bin, args) => {
+      calls.push(bin);
+      if (bin === 'C') return { code: 0, signal: null, stdout: 'OK', stderr: '', timedOut: false, error: null };
+      // codex would FAIL auth, and `where`/`which` lookups succeed
+      if (bin === 'D') return { code: 1, signal: null, stdout: '', stderr: 'token invalidated', timedOut: false, error: null };
+      return { code: 0, signal: null, stdout: bin === 'where' || bin === 'which' ? 'x' : '', stderr: '', timedOut: false, error: null };
+    };
+    const r = await prepareRun({
+      cwd: tmp,
+      configOverride: { binaries: { claude: 'C', codex: 'D', taskMaster: 'T' }, testCommand: null },
+      baseEnv: { PATH: 'p' },
+      runProcess,
+      requireCodex: false,
+    });
+    assert.ok(r.binaries.claude === 'C');
+    assert.ok(!calls.includes('D'), 'codex (D) must never be probed when requireCodex:false');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
 
