@@ -132,8 +132,10 @@ export async function resolveAllBinaries(config, runProcess = defaultRunProcess)
 }
 
 // Which npm packages ship a faster native exe worth preferring over the .cmd shim.
+// codex is intentionally excluded: the bundled .exe stores credentials separately
+// from the .cmd Node.js wrapper that `codex login` authenticates, so the .exe
+// always fails the auth probe even when the user is logged in.
 const EXE_UPGRADE = {
-  codex: { scope: '@openai', pkg: 'codex', exe: 'codex' },
   claude: { scope: '@anthropic-ai', pkg: 'claude-code', exe: 'claude' },
 };
 
